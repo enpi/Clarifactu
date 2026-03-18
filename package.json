@@ -1,0 +1,62 @@
+{
+  "name": "clarifactu",
+  "version": "1.0.0",
+  "description": "Gestión de facturación para profesionales de terapia",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "icon": "electron scripts/generate-icon.js",
+    "png-to-ico": "electron scripts/png-to-ico.js",
+    "build": "electron-builder",
+    "test:unit": "jest",
+    "test:e2e": "playwright test",
+    "test": "jest && playwright test"
+  },
+  "author": "Clarifactu",
+  "build": {
+    "appId": "com.clarifactu.app",
+    "productName": "Clarifactu",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false,
+      "sign": null
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**/*",
+      "src/**/*",
+      "node_modules/**/*",
+      "!node_modules/electron-builder/**/*",
+      "!node_modules/@electron/rebuild/**/*"
+    ]
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "better-sqlite3": "^9.4.3",
+    "googleapis": "^171.4.0",
+    "nodemailer": "^8.0.2",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "@playwright/test": "^1.58.2",
+    "electron": "^29.4.6",
+    "electron-builder": "^24.9.1",
+    "jest": "^30.3.0"
+  }
+}

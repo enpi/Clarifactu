@@ -1,0 +1,294 @@
+// ─── Clients Page ──────────────────────────────────────────────────────────────
+
+let clientsAllData = [];
+let clientsFilteredData = [];
+let clientsPage = 1;
+const CLIENTS_PER_PAGE = 20;
+
+async function renderClients(container) {
+  container.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Clientes</h1>
+        <p class="page-subtitle">Gestiona tus clientes</p>
+      </div>
+      <button class="btn btn-primary" id="new-client-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Nuevo cliente
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="toolbar" style="margin-bottom:0;flex:1;">
+          <div class="search-wrapper">
+            <span class="search-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </span>
+            <input type="text" class="search-input" id="client-search" placeholder="Buscar por nombre, NIF, email...">
+          </div>
+          <span id="client-count" class="text-muted" style="font-size:13px;"></span>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>NIF</th>
+              <th>Email</th>
+              <th>Teléfono</th>
+              <th>Notas</th>
+              <th style="width:150px;"></th>
+            </tr>
+          </thead>
+          <tbody id="clients-tbody">
+            <tr><td colspan="6"><div class="loading"><div class="spinner"></div>Cargando...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="clients-pagination"></div>
+    </div>
+  `;
+
+  document.getElementById('new-client-btn').addEventListener('click', () => openClientModal());
+
+  const searchInput = document.getElementById('client-search');
+  searchInput.addEventListener('input', debounce((e) => {
+    clientsPage = 1;
+    filterAndRenderClients(e.target.value.trim());
+  }, 200));
+
+  await loadClients();
+}
+
+async function loadClients() {
+  clientsAllData = await window.api.clients.getAll();
+  clientsPage = 1;
+  filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
+}
+
+function filterAndRenderClients(query = '') {
+  const q = query.toLowerCase();
+  clientsFilteredData = q
+    ? clientsAllData.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.nif || '').toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q)
+      )
+    : clientsAllData;
+
+  const countEl = document.getElementById('client-count');
+  if (countEl) countEl.textContent = `${clientsFilteredData.length} cliente${clientsFilteredData.length !== 1 ? 's' : ''}`;
+
+  const total = Math.ceil(clientsFilteredData.length / CLIENTS_PER_PAGE) || 1;
+  const page = Math.min(clientsPage, total);
+  const start = (page - 1) * CLIENTS_PER_PAGE;
+  renderClientsTable(clientsFilteredData.slice(start, start + CLIENTS_PER_PAGE));
+  renderPagination('clients-pagination', page, total, (p) => { clientsPage = p; filterAndRenderClients(document.getElementById('client-search')?.value.trim() || ''); });
+}
+
+function renderClientsTable(clients) {
+  const tbody = document.getElementById('clients-tbody');
+  if (!tbody) return;
+
+  if (clients.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6">
+          <div class="empty-state">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <p>No hay clientes. Crea el primero.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = clients.map(c => `
+    <tr>
+      <td class="fw-bold">${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.nif) || '<span class="text-muted">-</span>'}</td>
+      <td>${escapeHtml(c.email) || '<span class="text-muted">-</span>'}</td>
+      <td>${escapeHtml(c.phone) || '<span class="text-muted">-</span>'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.notes) || '<span class="text-muted">-</span>'}</td>
+      <td>
+        <div class="table-actions">
+          <button class="btn btn-ghost btn-sm" title="Ver facturas" onclick="viewClientInvoices(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Facturas
+          </button>
+          <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="openClientModal(${c.id})">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button class="btn btn-ghost btn-sm btn-icon danger" title="Eliminar" onclick="deleteClient(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+            </svg>
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openClientModal(id = null) {
+  const isEdit = id !== null;
+  let client = { name: '', nif: '', address: '', email: '', phone: '', notes: '' };
+
+  if (isEdit) {
+    client = await window.api.clients.getById(id);
+  }
+
+  openModal(isEdit ? 'Editar cliente' : 'Nuevo cliente', `
+    <form id="client-form">
+      <div class="form-group">
+        <label class="form-label">Nombre <span class="required">*</span></label>
+        <input type="text" class="form-control" id="client-name" value="${escapeHtml(client.name)}" placeholder="Nombre completo" required autofocus>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">NIF / DNI</label>
+          <input type="text" class="form-control" id="client-nif" value="${escapeHtml(client.nif || '')}" placeholder="12345678A">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Teléfono</label>
+          <input type="text" class="form-control" id="client-phone" value="${escapeHtml(client.phone || '')}" placeholder="+34 600 000 000">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" id="client-email" value="${escapeHtml(client.email || '')}" placeholder="correo@ejemplo.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Dirección</label>
+        <input type="text" class="form-control" id="client-address" value="${escapeHtml(client.address || '')}" placeholder="Calle, número, ciudad">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas</label>
+        <textarea class="form-control" id="client-notes" placeholder="Notas adicionales...">${escapeHtml(client.notes || '')}</textarea>
+      </div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;border-top:none;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">${isEdit ? 'Guardar cambios' : 'Crear cliente'}</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('client-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const data = {
+      name: document.getElementById('client-name').value.trim(),
+      nif: document.getElementById('client-nif').value.trim(),
+      email: document.getElementById('client-email').value.trim(),
+      phone: document.getElementById('client-phone').value.trim(),
+      address: document.getElementById('client-address').value.trim(),
+      notes: document.getElementById('client-notes').value.trim()
+    };
+
+    if (!data.name) {
+      showToast('El nombre es obligatorio', 'error');
+      return;
+    }
+
+    try {
+      if (isEdit) {
+        await window.api.clients.update(id, data);
+        showToast('Cliente actualizado correctamente', 'success');
+      } else {
+        await window.api.clients.create(data);
+        showToast('Cliente creado correctamente', 'success');
+      }
+      closeModal();
+      await loadClients();
+    } catch (err) {
+      showToast('Error al guardar el cliente: ' + err.message, 'error');
+    }
+  });
+}
+
+async function viewClientInvoices(clientId, clientName) {
+  const invoices = await window.api.invoices.getByClient(clientId);
+
+  const totalBilled = invoices.reduce((s, i) => s + (i.total || 0), 0);
+  const totalPaid = invoices.filter(i => i.payment_status === 'pagada').reduce((s, i) => s + (i.total || 0), 0);
+  const totalPending = totalBilled - totalPaid;
+
+  const rows = invoices.length === 0
+    ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary);">Sin facturas aún</td></tr>`
+    : invoices.map(inv => {
+        const paid = inv.payment_status === 'pagada';
+        const overdue = !paid && inv.date && inv.date <= (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; })();
+        const badgeCls = paid ? 'badge-paid' : overdue ? 'badge-overdue' : 'badge-pending';
+        const badgeLabel = paid ? 'Cobrada' : overdue ? 'Vencida' : 'Pendiente';
+        return `<tr>
+          <td><span class="badge badge-blue" style="font-size:11px;">${escapeHtml(inv.invoice_number)}</span></td>
+          <td style="font-size:12px;">${formatDate(inv.date)}</td>
+          <td class="text-right" style="font-size:12px;">${formatCurrency(inv.total)}</td>
+          <td style="text-align:center;"><span class="badge ${badgeCls}" style="font-size:10px;">${badgeLabel}</span></td>
+          <td style="font-size:11px;color:var(--text-secondary);">${inv.payment_date ? formatDate(inv.payment_date) : '-'}</td>
+        </tr>`;
+      }).join('');
+
+  openModal(`Facturas — ${clientName}`, `
+    <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:100px;background:#eff6ff;border-radius:8px;padding:10px 14px;">
+        <div style="font-size:11px;color:#1e40af;font-weight:600;margin-bottom:2px;">Total facturado</div>
+        <div style="font-size:16px;font-weight:700;color:#1e40af;">${formatCurrency(totalBilled)}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:#f0fdf4;border-radius:8px;padding:10px 14px;">
+        <div style="font-size:11px;color:#166534;font-weight:600;margin-bottom:2px;">Cobrado</div>
+        <div style="font-size:16px;font-weight:700;color:#166534;">${formatCurrency(totalPaid)}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:${totalPending > 0 ? '#fff7ed' : '#f9fafb'};border-radius:8px;padding:10px 14px;">
+        <div style="font-size:11px;color:${totalPending > 0 ? '#92400e' : 'var(--text-secondary)'};font-weight:600;margin-bottom:2px;">Pendiente</div>
+        <div style="font-size:16px;font-weight:700;color:${totalPending > 0 ? '#b45309' : 'var(--text-secondary)'};">${formatCurrency(totalPending)}</div>
+      </div>
+    </div>
+    <div class="table-wrapper" style="max-height:340px;overflow-y:auto;">
+      <table>
+        <thead><tr>
+          <th>Número</th><th>Fecha</th><th class="text-right">Total</th><th style="text-align:center;">Estado</th><th>F. cobro</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;text-align:right;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+async function deleteClient(id, name) {
+  const confirmed = await showConfirm(
+    '¿Eliminar cliente?',
+    `¿Estás seguro de que quieres eliminar a "${name}"? Esta acción no se puede deshacer.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await window.api.clients.delete(id);
+    showToast('Cliente eliminado', 'success');
+    await loadClients();
+  } catch (err) {
+    showToast('Error al eliminar el cliente: ' + err.message, 'error');
+  }
+}

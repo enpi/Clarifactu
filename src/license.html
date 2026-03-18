@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clarifactu – Activación</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #1e293b;
+      -webkit-app-region: drag;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+      padding: 48px 44px 40px;
+      width: 480px;
+      -webkit-app-region: no-drag;
+    }
+
+    .logo-area {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo-icon {
+      width: 56px;
+      height: 56px;
+      display: inline-block;
+      margin-bottom: 14px;
+    }
+
+    .app-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1e293b;
+      letter-spacing: -0.3px;
+    }
+
+    .app-sub {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+
+    .desc {
+      font-size: 13.5px;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .key-input {
+      width: 100%;
+      font-size: 18px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      padding: 14px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      outline: none;
+      color: #1e293b;
+      text-align: center;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      background: #f8fafc;
+    }
+
+    .key-input:focus {
+      border-color: #2563EB;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      background: #fff;
+    }
+
+    .key-input.error {
+      border-color: #ef4444;
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.10);
+    }
+
+    .key-input.success {
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+    }
+
+    .hint {
+      font-size: 11.5px;
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .error-msg {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #dc2626;
+      margin-top: 14px;
+      text-align: center;
+    }
+
+    .success-msg {
+      display: none;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #059669;
+      margin-top: 14px;
+      text-align: center;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px;
+      margin-top: 20px;
+      background: #2563EB;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.01em;
+    }
+
+    .btn:hover:not(:disabled) { background: #1d4ed8; }
+    .btn:active:not(:disabled) { transform: scale(0.99); }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+
+    .divider {
+      height: 1px;
+      background: #f1f5f9;
+      margin: 28px 0 20px;
+    }
+
+    .support {
+      font-size: 12px;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo-area">
+      <div class="logo-icon">
+        <img id="license-icon" width="56" height="56" style="display:block;border-radius:10px;">
+      </div>
+      <div class="app-name">Clarifactu</div>
+      <div class="app-sub">Facturación para terapeutas</div>
+    </div>
+
+    <h2>Activar licencia</h2>
+    <p class="desc">Introduce tu clave de licencia para activar Clarifactu. La activación es permanente en este dispositivo.</p>
+
+    <label class="form-label" for="license-key">Clave de licencia</label>
+    <input
+      type="text"
+      id="license-key"
+      class="key-input"
+      placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <div class="hint">Formato: 5 grupos de 5 caracteres separados por guiones</div>
+
+    <div id="error-msg" class="error-msg"></div>
+    <div id="success-msg" class="success-msg">
+      ✓ Licencia activada correctamente. Iniciando Clarifactu...
+    </div>
+
+    <button class="btn" id="activate-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      Activar
+    </button>
+
+    <div class="divider"></div>
+    <div class="support">¿Necesitas una clave de licencia? Contacta con el equipo de Clarifactu.</div>
+  </div>
+
+  <script>
+    window.licenseApi.getIconDataUrl().then(url => {
+      if (url) document.getElementById('license-icon').src = url;
+    });
+
+    const input = document.getElementById('license-key');
+    const btn = document.getElementById('activate-btn');
+    const errorMsg = document.getElementById('error-msg');
+    const successMsg = document.getElementById('success-msg');
+
+    // Auto-format key as user types: insert dashes every 5 chars
+    input.addEventListener('input', (e) => {
+      let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (val.length > 25) val = val.slice(0, 25);
+      // Insert dashes
+      const parts = [];
+      for (let i = 0; i < val.length; i += 5) parts.push(val.slice(i, i + 5));
+      e.target.value = parts.join('-');
+      input.classList.remove('error', 'success');
+      errorMsg.style.display = 'none';
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btn.click();
+    });
+
+    btn.addEventListener('click', async () => {
+      const key = input.value.trim();
+      if (!key) {
+        showError('Introduce una clave de licencia.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Verificando...';
+      errorMsg.style.display = 'none';
+
+      const result = await window.licenseApi.activate(key);
+
+      if (result.success) {
+        input.classList.add('success');
+        successMsg.style.display = 'block';
+        btn.textContent = '✓ Activado';
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Activar`;
+        input.classList.add('error');
+        showError(result.error || 'Clave de licencia no válida.');
+      }
+    });
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
