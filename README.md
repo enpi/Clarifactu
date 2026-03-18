@@ -82,11 +82,24 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Límite automático de 500 entradas para no crecer indefinidamente
 - Visible en el dashboard con marcas de tiempo relativas
 
+### Documentos
+
+- Creación de documentos genéricos (informes, certificados, comunicados…) independientes de las facturas
+- Campos: título, destinatario (cliente opcional) y cuerpo de texto libre
+- **Vista previa** del documento con la plantilla final antes de exportar
+- Exportación a **PDF** con plantilla profesional: logo, datos de la empresa, destinatario, título, cuerpo y pie con fecha y firma
+- **Firma incrustada** automáticamente en el pie del documento si está configurada
+- **Envío por email** directamente al cliente (si tiene email registrado), con asunto y mensaje personalizables
+- Badge **"Enviado"** en la lista cuando el documento ya fue enviado, con fecha en tooltip
+- Búsqueda por título, contenido o cliente
+- Registro en el **log de actividad** al enviar un documento por email
+
 ### Configuración
 
 #### Empresa
 - Nombre/razón social, NIF, dirección, email, teléfono, IBAN
 - Logo personalizado (almacenado en base de datos como base64)
+- **Firma**: se puede **dibujar** directamente con el ratón o pantalla táctil (canvas con color y grosor ajustables) o **subir una imagen**; se incrusta en el pie de los documentos PDF
 - Información adicional (pie de factura)
 
 #### Apariencia
@@ -218,6 +231,7 @@ Clarifactu/
 │           ├── services.js
 │           ├── new-invoice.js
 │           ├── invoices.js
+│           ├── documents.js
 │           └── settings.js
 ├── tests/
 │   ├── unit/
@@ -242,7 +256,7 @@ Las migraciones se aplican automáticamente en cada arranque, por lo que actuali
 ## Notas
 
 - La aplicación funciona **100% offline**. Ningún dato sale del equipo salvo el envío voluntario de facturas a la AEAT (Verifactu) o por email.
-- El logo se almacena como base64 en la base de datos.
+- El logo y la firma se almacenan como base64 en la base de datos.
 - El contador de facturas se reinicia automáticamente cada año nuevo.
 - Los backups son copias exactas del archivo `.db` y pueden restaurarse en cualquier instalación de Clarifactu.
 - El sistema de licencias es offline; las claves son válidas en cualquier equipo que tenga el mismo binario.
