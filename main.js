@@ -187,9 +187,137 @@ ipcMain.handle('invoices:exportCSV', async (e, year) => {
     filters: [{ name: 'CSV (Excel)', extensions: ['csv'] }]
   });
   if (result.canceled) return { success: false };
-  fs.writeFileSync(result.filePath, '\uFEFF' + csv, 'utf8'); // BOM for Excel
+  fs.writeFileSync(result.filePath, '\uFEFF' + csv, 'utf8');
   shell.showItemInFolder(result.filePath);
   return { success: true };
+});
+
+ipcMain.handle('invoices:exportExcel', async (e, year) => {
+  const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const headers = ['Número','Fecha','Cliente','Base imponible','IVA %','Cuota IVA','IRPF %','Cuota IRPF','Total','Estado cobro','Fecha cobro'];
+  const headerRow = headers.map(h => `<Cell><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
+  const dataRows = list.map(inv => {
+    const vals = [
+      inv.invoice_number, inv.date, inv.client_name || '',
+      (inv.subtotal||0).toFixed(2), (inv.tax_rate||0).toFixed(2), (inv.tax_amount||0).toFixed(2),
+      (inv.irpf_rate||0).toFixed(2), (inv.irpf_amount||0).toFixed(2), (inv.total||0).toFixed(2),
+      inv.payment_status || 'pendiente', inv.payment_date || ''
+    ];
+    return `<Row>${vals.map(v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('')}</Row>`;
+  }).join('');
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Facturas"><Table><Row>${headerRow}</Row>${dataRows}</Table></Worksheet></Workbook>`;
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar facturas a Excel',
+    defaultPath: `facturas${year ? '-' + year : ''}.xls`,
+    filters: [{ name: 'Excel', extensions: ['xls'] }]
+  });
+  if (result.canceled) return { success: false };
+  fs.writeFileSync(result.filePath, xml, 'utf8');
+  shell.showItemInFolder(result.filePath);
+  return { success: true };
+});
+
+ipcMain.handle('invoices:exportPDFSummary', async (e, year) => {
+  const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar listado de facturas a PDF',
+    defaultPath: `facturas${year ? '-' + year : ''}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  });
+  if (result.canceled) return { success: false, reason: 'cancelled' };
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const rows = list.map(inv => `<tr>
+    <td>${esc(inv.invoice_number)}</td><td>${esc(inv.date)}</td><td>${esc(inv.client_name||'')}</td>
+    <td style="text-align:right">${parseFloat(inv.total||0).toLocaleString('es-ES',{minimumFractionDigits:2})} €</td>
+    <td style="text-align:center">${esc(inv.payment_status||'pendiente')}</td>
+    <td>${esc(inv.payment_date||'')}</td>
+  </tr>`).join('');
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><style>
+    body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:12px;color:#1e293b;padding:40px 48px;}
+    h1{font-size:18px;margin:0 0 4px 0;}p{margin:0 0 20px 0;font-size:12px;color:#64748b;}
+    table{width:100%;border-collapse:collapse;}
+    th{background:#f1f5f9;padding:8px 10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e2e8f0;}
+    td{padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;}
+    tr:nth-child(even) td{background:#fafafa;}
+  </style></head><body>
+    <h1>Listado de facturas${year ? ' — ' + year : ''}</h1>
+    <p>Generado el ${new Date().toLocaleDateString('es-ES',{year:'numeric',month:'long',day:'numeric'})}</p>
+    <table><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th style="text-align:right">Total</th><th style="text-align:center">Estado</th><th>Fecha cobro</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+  </body></html>`;
+  const pdfWin = new BrowserWindow({ width:1000, height:1400, show:false, webPreferences:{ nodeIntegration:false, contextIsolation:true, sandbox:false } });
+  await pdfWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  await new Promise(r => setTimeout(r, 600));
+  try {
+    const buf = await pdfWin.webContents.printToPDF({ pageSize:'A4', printBackground:true, margins:{top:0,bottom:0,left:0,right:0} });
+    fs.writeFileSync(result.filePath, buf);
+    pdfWin.close();
+    shell.openPath(result.filePath);
+    return { success: true };
+  } catch (err) { pdfWin.close(); return { success: false, reason: err.message }; }
+});
+
+ipcMain.handle('dashboard:exportFiscalExcel', async (e, year) => {
+  const quarters = db.dashboard.getFiscalSummary(year);
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const headers = ['Trimestre','Base imponible','IVA repercutido','IRPF retenido','Nº facturas'];
+  const headerRow = headers.map(h => `<Cell><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
+  const dataRows = quarters.map(q => {
+    const vals = [`T${q.quarter}`, (q.base||0).toFixed(2), (q.iva||0).toFixed(2), (q.irpf||0).toFixed(2), q.count||0];
+    return `<Row>${vals.map(v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('')}</Row>`;
+  }).join('');
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Modelo 130"><Table><Row>${headerRow}</Row>${dataRows}</Table></Worksheet></Workbook>`;
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar resumen fiscal a Excel',
+    defaultPath: `modelo130-${year}.xls`,
+    filters: [{ name: 'Excel', extensions: ['xls'] }]
+  });
+  if (result.canceled) return { success: false };
+  fs.writeFileSync(result.filePath, xml, 'utf8');
+  shell.showItemInFolder(result.filePath);
+  return { success: true };
+});
+
+ipcMain.handle('dashboard:exportFiscalPDF', async (e, year) => {
+  const quarters = db.dashboard.getFiscalSummary(year);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar resumen fiscal a PDF',
+    defaultPath: `modelo130-${year}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  });
+  if (result.canceled) return { success: false, reason: 'cancelled' };
+  const fmt = n => parseFloat(n||0).toLocaleString('es-ES',{minimumFractionDigits:2});
+  const rows = quarters.map(q => `<tr>
+    <td style="text-align:center;font-weight:600">T${q.quarter}</td>
+    <td style="text-align:right">${fmt(q.base)} €</td>
+    <td style="text-align:right">${fmt(q.iva)} €</td>
+    <td style="text-align:right">${fmt(q.irpf)} €</td>
+    <td style="text-align:center">${q.count||0}</td>
+  </tr>`).join('');
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><style>
+    body{font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:13px;color:#1e293b;padding:48px 56px;}
+    h1{font-size:20px;margin:0 0 4px 0;}p{margin:0 0 24px 0;font-size:12px;color:#64748b;}
+    table{width:100%;border-collapse:collapse;}
+    th{background:#f1f5f9;padding:10px 14px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e2e8f0;}
+    td{padding:10px 14px;border-bottom:1px solid #f1f5f9;}
+    tr:nth-child(even) td{background:#fafafa;}
+  </style></head><body>
+    <h1>Resumen fiscal — Modelo 130 / ${year}</h1>
+    <p>Generado el ${new Date().toLocaleDateString('es-ES',{year:'numeric',month:'long',day:'numeric'})}</p>
+    <table><thead><tr><th>Trimestre</th><th style="text-align:right">Base imponible</th><th style="text-align:right">IVA repercutido</th><th style="text-align:right">IRPF retenido</th><th style="text-align:center">Nº facturas</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+  </body></html>`;
+  const pdfWin = new BrowserWindow({ width:900, height:800, show:false, webPreferences:{ nodeIntegration:false, contextIsolation:true, sandbox:false } });
+  await pdfWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  await new Promise(r => setTimeout(r, 600));
+  try {
+    const buf = await pdfWin.webContents.printToPDF({ pageSize:'A4', printBackground:true, margins:{top:0,bottom:0,left:0,right:0} });
+    fs.writeFileSync(result.filePath, buf);
+    pdfWin.close();
+    shell.openPath(result.filePath);
+    return { success: true };
+  } catch (err) { pdfWin.close(); return { success: false, reason: err.message }; }
 });
 
 // Activity Log
@@ -511,6 +639,14 @@ ipcMain.handle('exportPDFZip', async (e, invoices) => {
 ipcMain.handle('dashboard:getStats', () => db.dashboard.getStats());
 ipcMain.handle('dashboard:getMonthlyData', (e, year) => db.dashboard.getMonthlyData(year));
 ipcMain.handle('dashboard:getFiscalSummary', (e, year) => db.dashboard.getFiscalSummary(year));
+ipcMain.handle('dashboard:getTopClients', (e, year) => db.dashboard.getTopClients(year));
+ipcMain.handle('dashboard:getDocumentStats', () => db.dashboard.getDocumentStats());
+
+// Document Templates
+ipcMain.handle('documentTemplates:getAll', () => db.documentTemplates.getAll());
+ipcMain.handle('documentTemplates:create', (e, data) => db.documentTemplates.create(data));
+ipcMain.handle('documentTemplates:update', (e, id, data) => db.documentTemplates.update(id, data));
+ipcMain.handle('documentTemplates:delete', (e, id) => db.documentTemplates.delete(id));
 
 // ─── Verifactu ───────────────────────────────────────────────────────────────
 

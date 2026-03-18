@@ -21,7 +21,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Campos: nombre, NIF/DNI, email, teléfono, dirección, notas
 - Búsqueda en tiempo real por nombre, NIF o email (filtrado local)
 - **Paginación** (20 por página) con filtros activos
-- **Historial de facturas por cliente**: modal con resumen de total facturado, cobrado y pendiente, más tabla completa de sus facturas
+- **Historial del cliente**: modal con pestañas de Facturas (con resumen de total facturado, cobrado y pendiente) y Documentos; exportación de todas las facturas del cliente en un único ZIP
 
 ### Servicios
 - Catálogo de servicios con nombre, descripción, precio y duración
@@ -62,20 +62,29 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - **Exportación a CSV** compatible con Excel (con BOM UTF-8), incluyendo todos los campos y estado de cobro
 
 ### Dashboard
-- Resumen del año: facturado, nº facturas, clientes, servicios
+- Resumen del año: facturado, nº facturas, clientes, servicios, documentos totales y documentos enviados este mes
 - **Aviso de facturas pendientes de cobro** con importe total
 - Gráfico de barras de ingresos mensuales
 - Gráfico de línea de evolución acumulada
+- **Gráfico de top 5 clientes** por volumen facturado (barras horizontales, seleccionable por año)
 - Selector de año para navegar el historial
 - Últimas facturas emitidas
 - **Registro de actividad reciente** (últimas 25 acciones)
 - **Resumen fiscal trimestral** (T1–T4): base imponible, IVA repercutido e IRPF retenido por trimestre — útil para el Modelo 130
+- **Exportación del resumen fiscal a CSV** (compatible con Excel, BOM UTF-8)
 
 ### Búsqueda global
 - Acceso con **Ctrl+K** desde cualquier pantalla
 - Busca simultáneamente en facturas, clientes y servicios
 - Resultados agrupados por tipo con navegación por teclado (↑↓ Enter Esc)
 - Clic en un resultado navega directamente a la sección correspondiente
+
+### Atajos de teclado
+- **Ctrl+K** — búsqueda global
+- **Alt+1–6** — navegación directa a cada sección (Dashboard, Clientes, Servicios, Facturas, Documentos, Configuración)
+- **D** — ir a Documentos
+- **N** — nuevo documento (abre directamente el modal)
+- **?** — mostrar ayuda de atajos
 
 ### Registro de actividad
 - Historial de las últimas acciones: facturas creadas, emails enviados, PDFs exportados, facturas eliminadas
@@ -86,12 +95,16 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 
 - Creación de documentos genéricos (informes, certificados, comunicados…) independientes de las facturas
 - Campos: título, destinatario (cliente opcional) y cuerpo de texto libre
+- **Variables en el cuerpo**: `{nombre}` (nombre del cliente), `{fecha}` y `{hoy}` (fecha del día) se sustituyen automáticamente al generar el PDF o la vista previa
+- **Plantillas de documento**: gestión de plantillas reutilizables (crear, editar, eliminar); al crear un documento se puede aplicar una plantilla con un clic
 - **Vista previa** del documento con la plantilla final antes de exportar
 - Exportación a **PDF** con plantilla profesional: logo, datos de la empresa, destinatario, título, cuerpo y pie con fecha y firma
 - **Firma incrustada** automáticamente en el pie del documento si está configurada
 - **Envío por email** directamente al cliente (si tiene email registrado), con asunto y mensaje personalizables
 - Badge **"Enviado"** en la lista cuando el documento ya fue enviado, con fecha en tooltip
+- **Duplicar** documento con un clic (crea una copia con prefijo "Copia de")
 - Búsqueda por título, contenido o cliente
+- **Ordenación** por título, destinatario o fecha (clic en cabecera de columna, asc/desc)
 - Registro en el **log de actividad** al enviar un documento por email
 
 ### Configuración

@@ -19,41 +19,36 @@ async function renderDashboard(container) {
 
     <div id="unpaid-warning" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;margin-bottom:16px;color:#92400e;font-size:13.5px;"></div>
 
-    <div class="stats-grid" id="stats-grid">
-      <div class="stat-card skeleton-card">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
-      <div class="stat-card skeleton-card">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
-      <div class="stat-card skeleton-card">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
-      <div class="stat-card skeleton-card">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
+    <div class="stats-grid" id="stats-grid" style="grid-template-columns:repeat(5,1fr);">
+      <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
+      <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
+      <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
+      <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
+      <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
     </div>
 
     <div class="charts-grid">
       <div class="card">
-        <div class="card-header">
-          <span class="card-title">Ingresos mensuales</span>
-        </div>
+        <div class="card-header"><span class="card-title">Ingresos mensuales</span></div>
         <div class="card-body" style="padding:16px;">
-          <div class="chart-wrapper">
-            <canvas id="bar-chart"></canvas>
-          </div>
+          <div class="chart-wrapper"><canvas id="bar-chart"></canvas></div>
         </div>
       </div>
       <div class="card">
-        <div class="card-header">
-          <span class="card-title">Evolución acumulada</span>
-        </div>
+        <div class="card-header"><span class="card-title">Evolución acumulada</span></div>
         <div class="card-body" style="padding:16px;">
-          <div class="chart-wrapper">
-            <canvas id="line-chart"></canvas>
-          </div>
+          <div class="chart-wrapper"><canvas id="line-chart"></canvas></div>
         </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;" id="top-clients-card">
+      <div class="card-header">
+        <span class="card-title">Top clientes</span>
+        <span id="top-clients-year-label" style="font-size:12px;color:var(--text-secondary);"></span>
+      </div>
+      <div class="card-body" style="padding:16px;">
+        <div style="height:180px;"><canvas id="top-clients-chart"></canvas></div>
       </div>
     </div>
 
@@ -116,17 +111,21 @@ function generateYearOptions(currentYear) {
 
 let barChart = null;
 let lineChart = null;
+let topClientsChart = null;
 
 async function loadDashboardData(year) {
-  const [stats, monthly, fiscal] = await Promise.all([
+  const [stats, monthly, fiscal, topClients, docStats] = await Promise.all([
     window.api.dashboard.getStats(),
     window.api.dashboard.getMonthlyData(year),
-    window.api.dashboard.getFiscalSummary(year)
+    window.api.dashboard.getFiscalSummary(year),
+    window.api.dashboard.getTopClients(year),
+    window.api.dashboard.getDocumentStats()
   ]);
 
-  renderStats(stats);
+  renderStats(stats, docStats);
   renderUnpaidWarning(stats);
   renderCharts(monthly, year);
+  renderTopClients(topClients, year);
   renderFiscalSummary(fiscal, year);
   await Promise.all([loadRecentInvoices(), loadActivityLog()]);
 }
@@ -165,7 +164,30 @@ function renderFiscalSummary(quarters, year) {
   el.innerHTML = `
     <div class="card-header">
       <span class="card-title">Resumen fiscal ${year}</span>
-      <span style="font-size:12px;color:var(--text-secondary);">Modelo 130 / IVA trimestral</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:12px;color:var(--text-secondary);">Modelo 130 / IVA trimestral</span>
+        <div style="position:relative;" id="fiscal-export-wrapper">
+          <button class="btn btn-secondary btn-sm" id="fiscal-export-toggle" style="display:flex;align-items:center;gap:5px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div id="fiscal-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:200;min-width:140px;overflow:hidden;">
+            <button onclick="exportFiscalCSV(${year});document.getElementById('fiscal-export-menu').style.display='none';" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              CSV
+            </button>
+            <button onclick="exportFiscalExcel(${year});document.getElementById('fiscal-export-menu').style.display='none';" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+              Excel
+            </button>
+            <button onclick="exportFiscalPDF(${year});document.getElementById('fiscal-export-menu').style.display='none';" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              PDF
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="card-body" style="padding:0;">
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -202,14 +224,58 @@ function renderFiscalSummary(quarters, year) {
       ${!hasData ? `<p style="text-align:center;color:var(--text-secondary);font-size:13px;padding:16px;">Sin facturas en ${year}</p>` : ''}
     </div>
   `;
+
+  // Dropdown toggle
+  const toggle = document.getElementById('fiscal-export-toggle');
+  const menu   = document.getElementById('fiscal-export-menu');
+  if (toggle && menu) {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', () => { menu.style.display = 'none'; }, { capture: true, passive: true });
+  }
+}
+
+async function exportFiscalExcel(year) {
+  const result = await window.api.dashboard.exportFiscalExcel(year);
+  if (result.success) showToast('Excel exportado correctamente', 'success');
+}
+
+async function exportFiscalPDF(year) {
+  const result = await window.api.dashboard.exportFiscalPDF(year);
+  if (result && result.success) showToast('PDF exportado correctamente', 'success');
+  else if (result && result.reason !== 'cancelled') showToast('Error al exportar PDF', 'error');
 }
 
 const ACTION_META = {
-  factura_creada:   { label: 'Factura creada',   color: '#2563eb', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>' },
-  email_enviado:    { label: 'Email enviado',     color: '#059669', icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' },
-  pdf_exportado:    { label: 'PDF exportado',     color: '#7c3aed', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>' },
-  factura_eliminada:{ label: 'Factura eliminada', color: '#dc2626', icon: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' },
+  factura_creada:    { label: 'Factura creada',    color: '#2563eb', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>' },
+  email_enviado:     { label: 'Email enviado',      color: '#059669', icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' },
+  pdf_exportado:     { label: 'PDF exportado',      color: '#7c3aed', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>' },
+  factura_eliminada: { label: 'Factura eliminada',  color: '#dc2626', icon: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' },
+  documento_enviado: { label: 'Documento enviado',  color: '#0891b2', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>' },
 };
+
+async function exportFiscalCSV(year) {
+  const quarters = await window.api.dashboard.getFiscalSummary(year);
+  const bom = '\uFEFF';
+  const header = 'Trimestre,Facturas,Base imponible,IVA repercutido,IRPF retenido';
+  const rows = quarters.map(q =>
+    `${q.label},${q.count},${q.base.toFixed(2)},${q.iva.toFixed(2)},${q.irpf.toFixed(2)}`
+  );
+  const totalBase = quarters.reduce((s,q) => s+q.base, 0);
+  const totalIva  = quarters.reduce((s,q) => s+q.iva,  0);
+  const totalIrpf = quarters.reduce((s,q) => s+q.irpf, 0);
+  const totalCount= quarters.reduce((s,q) => s+q.count,0);
+  rows.push(`Total ${year},${totalCount},${totalBase.toFixed(2)},${totalIva.toFixed(2)},${totalIrpf.toFixed(2)}`);
+  const csv = bom + [header, ...rows].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `resumen-fiscal-${year}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('CSV exportado correctamente', 'success');
+}
 
 async function loadActivityLog() {
   const el = document.getElementById('activity-log-body');
@@ -244,10 +310,10 @@ async function loadActivityLog() {
   }
 }
 
-function renderStats(stats) {
+function renderStats(stats, docStats) {
   const grid = document.getElementById('stats-grid');
   grid.innerHTML = `
-    <div class="stat-card">
+    <div class="stat-card" style="cursor:pointer;" onclick="navigateTo('invoices')">
       <div class="stat-icon blue">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
@@ -258,8 +324,7 @@ function renderStats(stats) {
         <div class="stat-label">Facturado este año</div>
       </div>
     </div>
-
-    <div class="stat-card">
+    <div class="stat-card" style="cursor:pointer;" onclick="navigateTo('invoices')">
       <div class="stat-icon green">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -271,8 +336,7 @@ function renderStats(stats) {
         <div class="stat-label">Total facturas</div>
       </div>
     </div>
-
-    <div class="stat-card">
+    <div class="stat-card" style="cursor:pointer;" onclick="navigateTo('clients')">
       <div class="stat-icon purple">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -284,8 +348,7 @@ function renderStats(stats) {
         <div class="stat-label">Clientes</div>
       </div>
     </div>
-
-    <div class="stat-card">
+    <div class="stat-card" style="cursor:pointer;" onclick="navigateTo('services')">
       <div class="stat-icon orange">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
@@ -297,7 +360,60 @@ function renderStats(stats) {
         <div class="stat-label">Servicios</div>
       </div>
     </div>
+    <div class="stat-card" style="cursor:pointer;" onclick="navigateTo('documents')">
+      <div class="stat-icon" style="background:#f0fdf4;color:#059669;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="12" y1="17" x2="8" y2="17"/>
+        </svg>
+      </div>
+      <div class="stat-info">
+        <div class="stat-value">${docStats ? docStats.total : 0}</div>
+        <div class="stat-label">Documentos totales</div>
+      </div>
+    </div>
   `;
+}
+
+function renderTopClients(clients, year) {
+  const el = document.getElementById('top-clients-year-label');
+  if (el) el.textContent = year;
+  const canvas = document.getElementById('top-clients-chart');
+  if (!canvas) return;
+
+  if (topClientsChart) topClientsChart.destroy();
+
+  if (!clients || clients.length === 0) {
+    canvas.parentElement.innerHTML = `<p style="text-align:center;color:var(--text-secondary);font-size:13px;padding:40px 0;">Sin datos para ${year}</p>`;
+    return;
+  }
+
+  topClientsChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: clients.map(c => c.client_name || 'Sin nombre'),
+      datasets: [{
+        data: clients.map(c => c.total),
+        backgroundColor: ['rgba(37,99,235,0.8)','rgba(16,185,129,0.8)','rgba(124,58,237,0.8)','rgba(245,158,11,0.8)','rgba(239,68,68,0.8)'],
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ` ${formatCurrency(ctx.parsed.x)} · ${clients[ctx.dataIndex].count} facturas` } }
+      },
+      scales: {
+        x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 }, callback: (v) => formatCurrency(v) } },
+        y: { grid: { display: false }, ticks: { font: { size: 12 } } }
+      }
+    }
+  });
 }
 
 function renderCharts(monthly, year) {

@@ -4,6 +4,8 @@ let documentsAllData = [];
 let documentsFilteredData = [];
 let documentsPage = 1;
 const DOCS_PER_PAGE = 20;
+let documentsSortCol = 'created_at';
+let documentsSortDir = 'desc';
 
 async function renderDocuments(container) {
   container.innerHTML = `
@@ -12,12 +14,21 @@ async function renderDocuments(container) {
         <h1 class="page-title">Documentos</h1>
         <p class="page-subtitle">Informes y documentos para tus clientes</p>
       </div>
-      <button class="btn btn-primary" id="doc-new-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        Nuevo documento
-      </button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" id="doc-templates-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          Plantillas
+        </button>
+        <button class="btn btn-primary" id="doc-new-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Nuevo documento
+        </button>
+      </div>
     </div>
 
     <div class="card">
@@ -38,10 +49,16 @@ async function renderDocuments(container) {
         <table>
           <thead>
             <tr>
-              <th>Título</th>
-              <th>Dirigido a</th>
-              <th>Fecha</th>
-              <th style="width:200px;"></th>
+              <th class="sortable-header" data-col="title" style="cursor:pointer;user-select:none;">
+                Título <span id="sort-title" class="sort-arrow"></span>
+              </th>
+              <th class="sortable-header" data-col="client_name" style="cursor:pointer;user-select:none;">
+                Dirigido a <span id="sort-client_name" class="sort-arrow"></span>
+              </th>
+              <th class="sortable-header" data-col="created_at" style="cursor:pointer;user-select:none;">
+                Fecha <span id="sort-created_at" class="sort-arrow">↓</span>
+              </th>
+              <th style="width:220px;"></th>
             </tr>
           </thead>
           <tbody id="docs-tbody">
@@ -54,13 +71,41 @@ async function renderDocuments(container) {
   `;
 
   document.getElementById('doc-new-btn').addEventListener('click', () => openDocumentModal());
+  document.getElementById('doc-templates-btn').addEventListener('click', () => openTemplatesModal());
 
   document.getElementById('doc-search').addEventListener('input', debounce((e) => {
     documentsPage = 1;
     filterAndRenderDocuments(e.target.value.trim());
   }, 200));
 
+  container.querySelectorAll('.sortable-header').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (documentsSortCol === col) {
+        documentsSortDir = documentsSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        documentsSortCol = col;
+        documentsSortDir = col === 'created_at' ? 'desc' : 'asc';
+      }
+      updateSortArrows();
+      documentsPage = 1;
+      filterAndRenderDocuments(document.getElementById('doc-search')?.value.trim() || '');
+    });
+  });
+
   await loadDocuments();
+}
+
+function updateSortArrows() {
+  ['title', 'client_name', 'created_at'].forEach(col => {
+    const el = document.getElementById('sort-' + col);
+    if (!el) return;
+    if (col === documentsSortCol) {
+      el.textContent = documentsSortDir === 'asc' ? '↑' : '↓';
+    } else {
+      el.textContent = '';
+    }
+  });
 }
 
 async function loadDocuments() {
@@ -71,13 +116,24 @@ async function loadDocuments() {
 
 function filterAndRenderDocuments(query = '') {
   const q = query.toLowerCase();
-  documentsFilteredData = q
+  let filtered = q
     ? documentsAllData.filter(d =>
         d.title.toLowerCase().includes(q) ||
         (d.body || '').toLowerCase().includes(q) ||
         (d.client_name || '').toLowerCase().includes(q)
       )
-    : documentsAllData;
+    : documentsAllData.slice();
+
+  // Sort
+  filtered.sort((a, b) => {
+    let va = (a[documentsSortCol] || '').toLowerCase();
+    let vb = (b[documentsSortCol] || '').toLowerCase();
+    if (va < vb) return documentsSortDir === 'asc' ? -1 : 1;
+    if (va > vb) return documentsSortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  documentsFilteredData = filtered;
 
   const countEl = document.getElementById('doc-count');
   if (countEl) countEl.textContent = `${documentsFilteredData.length} documento${documentsFilteredData.length !== 1 ? 's' : ''}`;
@@ -128,10 +184,7 @@ function renderDocumentsTable(docs) {
 
     return `
       <tr>
-        <td>
-          <span class="fw-bold">${escapeHtml(doc.title)}</span>
-          ${doc.body ? `<br><span class="text-muted" style="font-size:12px;">${escapeHtml(doc.body.slice(0, 70))}${doc.body.length > 70 ? '…' : ''}</span>` : ''}
-        </td>
+        <td class="fw-bold">${escapeHtml(doc.title)}</td>
         <td>${clientCell}</td>
         <td class="text-muted" style="font-size:13px;">${formatDate((doc.created_at || '').split(' ')[0])}</td>
         <td>
@@ -156,6 +209,12 @@ function renderDocumentsTable(docs) {
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
                 <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+            <button class="btn btn-ghost btn-sm btn-icon" title="Duplicar" onclick="duplicateDocument(${doc.id})">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
             <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="openDocumentModal(${doc.id})">
@@ -189,17 +248,34 @@ async function openDocumentModal(id = null) {
     doc = await window.api.documents.getById(id);
   }
 
-  const clients = await window.api.clients.getAll();
+  const [clients, templates] = await Promise.all([
+    window.api.clients.getAll(),
+    window.api.documentTemplates.getAll()
+  ]);
   const clientOptions = clients.map(c =>
     `<option value="${c.id}" ${doc.client_id == c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
   ).join('');
 
+  const templateOptions = templates.length > 0
+    ? `<div class="form-group" style="margin-bottom:8px;">
+         <label class="form-label">Usar plantilla</label>
+         <div style="display:flex;gap:8px;">
+           <select class="form-control" id="doc-template-select" style="flex:1;">
+             <option value="">— Selecciona una plantilla —</option>
+             ${templates.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+           </select>
+           <button type="button" class="btn btn-ghost" id="doc-apply-tpl-btn">Aplicar</button>
+         </div>
+       </div>`
+    : '';
+
   openModal(isEdit ? 'Editar documento' : 'Nuevo documento', `
     <form id="doc-form">
+      ${templateOptions}
       <div class="form-group">
         <label class="form-label">Título <span class="required">*</span></label>
         <input type="text" class="form-control" id="doc-title" value="${escapeHtml(doc.title || '')}"
-          placeholder="Ej: Informe de evolución, Certificado de asistencia…" autofocus>
+          placeholder="Ej: Informe de evolución, Certificado de asistencia…" ${!templates.length || isEdit ? 'autofocus' : ''}>
       </div>
       <div class="form-group">
         <label class="form-label">Dirigido a (cliente)</label>
@@ -210,6 +286,11 @@ async function openDocumentModal(id = null) {
       </div>
       <div class="form-group">
         <label class="form-label">Contenido</label>
+        <p class="text-muted" style="font-size:12px;margin-bottom:6px;">
+          Usa <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{nombre}</code> (cliente),
+          <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{fecha}</code> o
+          <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{hoy}</code> para insertar datos automáticamente.
+        </p>
         <textarea class="form-control" id="doc-body" rows="10"
           placeholder="Escribe aquí el cuerpo del documento…">${escapeHtml(doc.body || '')}</textarea>
       </div>
@@ -219,6 +300,22 @@ async function openDocumentModal(id = null) {
       </div>
     </form>
   `, { size: 'lg' });
+
+  // Apply template button
+  const applyBtn = document.getElementById('doc-apply-tpl-btn');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', () => {
+      const sel = document.getElementById('doc-template-select');
+      const tplId = parseInt(sel.value);
+      const tpl = templates.find(t => t.id === tplId);
+      if (!tpl) return;
+      const titleEl = document.getElementById('doc-title');
+      const bodyEl  = document.getElementById('doc-body');
+      if (!titleEl.value) titleEl.value = tpl.name;
+      bodyEl.value = tpl.body || '';
+      bodyEl.focus();
+    });
+  }
 
   document.getElementById('doc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -417,6 +514,186 @@ async function deleteDocument(id, title) {
   }
 }
 
+// ─── Duplicar ──────────────────────────────────────────────────────────────────
+
+async function duplicateDocument(id) {
+  try {
+    const doc = await window.api.documents.getById(id);
+    await window.api.documents.create({
+      title:     'Copia de ' + doc.title,
+      body:      doc.body,
+      client_id: doc.client_id || null
+    });
+    showToast('Documento duplicado correctamente', 'success');
+    await loadDocuments();
+  } catch (err) {
+    showToast('Error al duplicar: ' + err.message, 'error');
+  }
+}
+
+// ─── Plantillas ────────────────────────────────────────────────────────────────
+
+async function openTemplatesModal() {
+  const templates = await window.api.documentTemplates.getAll();
+
+  const renderList = () => templates.map((t, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 0;
+                border-bottom:1px solid var(--border);" id="tpl-row-${t.id}">
+      <div style="flex:1;min-width:0;">
+        <div class="fw-bold" style="font-size:14px;">${escapeHtml(t.name)}</div>
+        <div class="text-muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          ${escapeHtml((t.body || '').substring(0, 80))}${(t.body || '').length > 80 ? '…' : ''}
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="editTemplate(${t.id})">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </button>
+      <button class="btn btn-ghost btn-sm btn-icon danger" title="Eliminar" onclick="deleteTemplate(${t.id}, '${escapeHtml(t.name).replace(/'/g, "\\'")}')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </button>
+    </div>
+  `).join('');
+
+  openModal('Plantillas de documento', `
+    <div style="margin-bottom:16px;">
+      <p class="text-muted" style="font-size:13px;margin-bottom:12px;">
+        Las plantillas te permiten reutilizar estructuras de documentos. Usa <code style="background:var(--content-bg);padding:1px 5px;border-radius:4px;">{nombre}</code>,
+        <code style="background:var(--content-bg);padding:1px 5px;border-radius:4px;">{fecha}</code> o
+        <code style="background:var(--content-bg);padding:1px 5px;border-radius:4px;">{hoy}</code> en el cuerpo.
+      </p>
+    </div>
+    <div id="templates-list">
+      ${templates.length === 0
+        ? `<div class="empty-state" style="padding:24px 0;">
+             <p>No hay plantillas. Crea la primera.</p>
+           </div>`
+        : renderList()
+      }
+    </div>
+    <div class="modal-footer" style="margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-primary" onclick="openNewTemplateForm()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Nueva plantilla
+      </button>
+    </div>
+  `, { size: 'lg' });
+}
+
+function openNewTemplateForm() {
+  openModal('Nueva plantilla', `
+    <form id="tpl-form">
+      <div class="form-group">
+        <label class="form-label">Nombre <span class="required">*</span></label>
+        <input type="text" class="form-control" id="tpl-name" placeholder="Ej: Informe de evolución" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cuerpo</label>
+        <p class="text-muted" style="font-size:12px;margin-bottom:6px;">
+          Puedes usar <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{nombre}</code> (cliente),
+          <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{fecha}</code> y
+          <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{hoy}</code> (fecha de hoy).
+        </p>
+        <textarea class="form-control" id="tpl-body" rows="10"
+          placeholder="Escribe aquí el contenido de la plantilla…"></textarea>
+      </div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;border-top:none;">
+        <button type="button" class="btn btn-secondary" onclick="openTemplatesModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar plantilla</button>
+      </div>
+    </form>
+  `, { size: 'lg' });
+
+  document.getElementById('tpl-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('tpl-name').value.trim();
+    const body = document.getElementById('tpl-body').value;
+    if (!name) { showToast('El nombre es obligatorio', 'error'); return; }
+    try {
+      await window.api.documentTemplates.create({ name, body });
+      showToast('Plantilla creada correctamente', 'success');
+      openTemplatesModal();
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  });
+}
+
+async function editTemplate(id) {
+  const templates = await window.api.documentTemplates.getAll();
+  const t = templates.find(x => x.id === id);
+  if (!t) return;
+
+  openModal('Editar plantilla', `
+    <form id="tpl-edit-form">
+      <div class="form-group">
+        <label class="form-label">Nombre <span class="required">*</span></label>
+        <input type="text" class="form-control" id="tpl-name" value="${escapeHtml(t.name)}" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cuerpo</label>
+        <p class="text-muted" style="font-size:12px;margin-bottom:6px;">
+          Puedes usar <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{nombre}</code> (cliente),
+          <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{fecha}</code> y
+          <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{hoy}</code> (fecha de hoy).
+        </p>
+        <textarea class="form-control" id="tpl-body" rows="10">${escapeHtml(t.body || '')}</textarea>
+      </div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;border-top:none;">
+        <button type="button" class="btn btn-secondary" onclick="openTemplatesModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+      </div>
+    </form>
+  `, { size: 'lg' });
+
+  document.getElementById('tpl-edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('tpl-name').value.trim();
+    const body = document.getElementById('tpl-body').value;
+    if (!name) { showToast('El nombre es obligatorio', 'error'); return; }
+    try {
+      await window.api.documentTemplates.update(id, { name, body });
+      showToast('Plantilla actualizada correctamente', 'success');
+      openTemplatesModal();
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  });
+}
+
+async function deleteTemplate(id, name) {
+  const confirmed = await showConfirm('¿Eliminar plantilla?', `¿Eliminar la plantilla "${name}"? Esta acción no se puede deshacer.`);
+  if (!confirmed) return;
+  try {
+    await window.api.documentTemplates.delete(id);
+    showToast('Plantilla eliminada', 'success');
+    openTemplatesModal();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+// ─── Variable substitution ────────────────────────────────────────────────────
+
+function resolveDocVariables(body, doc) {
+  const today = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+  const clientName = doc.client_name || '';
+  return (body || '')
+    .replace(/\{nombre\}/gi, clientName)
+    .replace(/\{fecha\}/gi,  today)
+    .replace(/\{hoy\}/gi,    today);
+}
+
 // ─── Plantilla compartida (preview y PDF) ─────────────────────────────────────
 
 function buildDocumentTemplateInner(doc, business) {
@@ -424,11 +701,11 @@ function buildDocumentTemplateInner(doc, business) {
   const logoHtml     = business && business.logo
     ? `<img src="${business.logo}" style="max-height:60px;max-width:150px;object-fit:contain;" alt="Logo">`
     : '';
-  const businessName = (business && business.name)  ? escapeHtml(business.name)  : '';
-  const businessNif  = (business && business.nif)   ? escapeHtml(business.nif)   : '';
-  const businessEmail= (business && business.email) ? escapeHtml(business.email) : '';
+  const businessName = (business && business.name)       ? escapeHtml(business.name)       : '';
+  const extraInfo    = (business && business.extra_info) ? escapeHtml(business.extra_info) : '';
   const clientName   = doc.client_name ? escapeHtml(doc.client_name) : null;
-  const bodyLines    = (doc.body || '').split('\n')
+  const resolvedBody = resolveDocVariables(doc.body, doc);
+  const bodyLines    = resolvedBody.split('\n')
     .map(l => `<p style="margin:0 0 10px 0;min-height:1em;">${escapeHtml(l) || '&nbsp;'}</p>`)
     .join('');
   const sigHtml = business && business.signature
@@ -440,8 +717,7 @@ function buildDocumentTemplateInner(doc, business) {
       <div>${logoHtml || `<span style="font-size:20px;font-weight:700;color:var(--text-primary);">${businessName}</span>`}</div>
       <div style="text-align:right;font-size:12px;color:var(--text-secondary);line-height:1.8;">
         ${businessName && logoHtml ? `<div style="font-weight:600;color:var(--text-primary);font-size:13px;">${businessName}</div>` : ''}
-        ${businessNif   ? `<div>${businessNif}</div>`   : ''}
-        ${businessEmail ? `<div>${businessEmail}</div>` : ''}
+        ${extraInfo ? `<div style="white-space:pre-line;">${extraInfo}</div>` : ''}
       </div>
     </div>
 
@@ -465,16 +741,16 @@ function buildDocumentTemplateInner(doc, business) {
 
     <div style="border-top:1px solid var(--border);padding-top:24px;
                 display:flex;justify-content:space-between;align-items:flex-end;">
-      <div style="font-size:12px;color:var(--text-secondary);">
-        <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px;">${dateStr}</div>
-        <div>Fecha del documento</div>
-      </div>
       <div style="text-align:center;">
         ${sigHtml}
         <div style="width:180px;border-top:1px solid var(--text-muted);padding-top:8px;font-size:12px;color:var(--text-secondary);">
           <div style="font-weight:600;color:var(--text-primary);">${businessName}</div>
           <div>Firma</div>
         </div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:var(--text-secondary);">
+        <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px;">${dateStr}</div>
+        <div>Fecha del documento</div>
       </div>
     </div>
   `;
@@ -485,11 +761,11 @@ function buildDocumentPDFHtml(doc, business) {
   const logoHtml     = business && business.logo
     ? `<img src="${business.logo}" style="max-height:60px;max-width:150px;object-fit:contain;" alt="Logo">`
     : '';
-  const businessName = (business && business.name)  ? escapeHtml(business.name)  : '';
-  const businessNif  = (business && business.nif)   ? escapeHtml(business.nif)   : '';
-  const businessEmail= (business && business.email) ? escapeHtml(business.email) : '';
+  const businessName = (business && business.name)       ? escapeHtml(business.name)       : '';
+  const extraInfo    = (business && business.extra_info) ? escapeHtml(business.extra_info) : '';
   const clientName   = doc.client_name ? escapeHtml(doc.client_name) : null;
-  const bodyLines    = (doc.body || '').split('\n')
+  const resolvedBody = resolveDocVariables(doc.body, doc);
+  const bodyLines    = resolvedBody.split('\n')
     .map(l => `<p>${escapeHtml(l) || '&nbsp;'}</p>`)
     .join('');
   const sigHtml = business && business.signature
@@ -517,8 +793,7 @@ function buildDocumentPDFHtml(doc, business) {
     <div>${logoHtml || `<span style="font-size:20px;font-weight:700;">${businessName}</span>`}</div>
     <div style="text-align:right;font-size:12px;color:#64748b;line-height:1.8;">
       ${businessName && logoHtml ? `<div style="font-weight:600;color:#1e293b;font-size:13px;">${businessName}</div>` : ''}
-      ${businessNif   ? `<div>${businessNif}</div>`   : ''}
-      ${businessEmail ? `<div>${businessEmail}</div>` : ''}
+      ${extraInfo ? `<div style="white-space:pre-line;">${extraInfo}</div>` : ''}
     </div>
   </div>
 
@@ -540,16 +815,16 @@ function buildDocumentPDFHtml(doc, business) {
   </div>
 
   <div style="border-top:1px solid #e2e8f0;padding-top:24px;display:flex;justify-content:space-between;align-items:flex-end;">
-    <div style="font-size:12px;color:#64748b;">
-      <div style="font-weight:600;color:#1e293b;margin-bottom:2px;">${dateStr}</div>
-      <div>Fecha del documento</div>
-    </div>
     <div style="text-align:center;">
       ${sigHtml}
       <div style="width:180px;border-top:1px solid #94a3b8;padding-top:8px;font-size:12px;color:#64748b;">
         <div style="font-weight:600;color:#1e293b;">${businessName}</div>
         <div>Firma</div>
       </div>
+    </div>
+    <div style="text-align:right;font-size:12px;color:#64748b;">
+      <div style="font-weight:600;color:#1e293b;margin-bottom:2px;">${dateStr}</div>
+      <div>Fecha del documento</div>
     </div>
   </div>
 </body>

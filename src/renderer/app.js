@@ -247,9 +247,9 @@ document.addEventListener('keydown', (e) => {
   // No disparar atajos de navegación mientras se escribe
   if (inInput) return;
 
-  // ── Alt+1-5 — navegación rápida ───────────────────────────────────────────
+  // ── Alt+1-6 — navegación rápida ───────────────────────────────────────────
   if (e.altKey && !e.ctrlKey && !e.shiftKey) {
-    const navMap = { '1': 'dashboard', '2': 'clients', '3': 'services', '4': 'invoices', '5': 'settings' };
+    const navMap = { '1': 'dashboard', '2': 'clients', '3': 'services', '4': 'invoices', '5': 'documents', '6': 'settings' };
     if (navMap[e.key]) { e.preventDefault(); navigateTo(navMap[e.key]); return; }
   }
 
@@ -276,6 +276,21 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // ── D — ir a documentos ───────────────────────────────────────────────────
+  if (e.key === 'd' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    navigateTo('documents');
+    return;
+  }
+
+  // ── N — nuevo documento ───────────────────────────────────────────────────
+  if (e.key === 'n' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    e.preventDefault();
+    navigateTo('documents');
+    setTimeout(() => document.getElementById('doc-new-btn')?.click(), 50);
+    return;
+  }
+
   // ── Ctrl+, — configuración ────────────────────────────────────────────────
   if ((e.ctrlKey || e.metaKey) && e.key === ',') {
     e.preventDefault();
@@ -294,12 +309,15 @@ document.addEventListener('keydown', (e) => {
         <kbd style="${kbdStyle}">F</kbd><span>Nueva factura</span>
         <kbd style="${kbdStyle}">C</kbd><span>Nuevo cliente</span>
         <kbd style="${kbdStyle}">S</kbd><span>Nuevo servicio</span>
+        <kbd style="${kbdStyle}">D</kbd><span>Ir a Documentos</span>
+        <kbd style="${kbdStyle}">N</kbd><span>Nuevo documento</span>
         <div style="grid-column:1/-1;border-top:1px solid var(--border);margin:4px 0;"></div>
         <kbd style="${kbdStyle}">Alt 1</kbd><span>Dashboard</span>
         <kbd style="${kbdStyle}">Alt 2</kbd><span>Clientes</span>
         <kbd style="${kbdStyle}">Alt 3</kbd><span>Servicios</span>
         <kbd style="${kbdStyle}">Alt 4</kbd><span>Facturas</span>
-        <kbd style="${kbdStyle}">Alt 5</kbd><span>Configuración</span>
+        <kbd style="${kbdStyle}">Alt 5</kbd><span>Documentos</span>
+        <kbd style="${kbdStyle}">Alt 6</kbd><span>Configuración</span>
         <div style="grid-column:1/-1;border-top:1px solid var(--border);margin:4px 0;"></div>
         <kbd style="${kbdStyle}">Ctrl ,</kbd><span>Configuración</span>
         <kbd style="${kbdStyle}">?</kbd><span>Mostrar esta ayuda</span>
@@ -323,20 +341,21 @@ globalSearchInput.addEventListener('input', debounce(async (e) => {
 
   if (q.length < 2) {
     searchResults.innerHTML = q.length === 0
-      ? `<div class="search-empty">Escribe para buscar en facturas, clientes y servicios</div>`
+      ? `<div class="search-empty">Escribe para buscar en facturas, clientes, servicios y documentos</div>`
       : '';
     return;
   }
 
   searchResults.innerHTML = `<div class="search-empty"><div class="spinner" style="width:16px;height:16px;margin:0 auto;"></div></div>`;
 
-  const [invoices, clients, services] = await Promise.all([
+  const [invoices, clients, services, documents] = await Promise.all([
     window.api.invoices.search(q),
     window.api.clients.search(q),
-    window.api.services.search(q)
+    window.api.services.search(q),
+    window.api.documents.search(q)
   ]);
 
-  const total = invoices.length + clients.length + services.length;
+  const total = invoices.length + clients.length + services.length + documents.length;
 
   if (total === 0) {
     searchResults.innerHTML = `<div class="search-empty">Sin resultados para "<strong>${escapeHtml(q)}</strong>"</div>`;
@@ -408,6 +427,27 @@ globalSearchInput.addEventListener('input', debounce(async (e) => {
     `);
   }
 
+  if (documents.length > 0) {
+    sections.push(`
+      <div class="search-section-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="12" y1="17" x2="8" y2="17"/></svg>
+        Documentos
+      </div>
+      ${documents.slice(0, 5).map(d => `
+        <div class="search-result-item" data-action="document" data-id="${d.id}">
+          <div class="search-result-icon" style="background:#f0fdf4;color:#059669;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="12" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <div class="search-result-info">
+            <div class="search-result-title">${escapeHtml(d.title)}</div>
+            <div class="search-result-sub">${d.client_name ? escapeHtml(d.client_name) + ' · ' : ''}${formatDate((d.created_at || '').split(' ')[0])}</div>
+          </div>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-secondary);flex-shrink:0;"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      `).join('')}
+    `);
+  }
+
   searchResults.innerHTML = sections.join('');
 
   searchResults.querySelectorAll('.search-result-item').forEach(item => {
@@ -421,6 +461,9 @@ globalSearchInput.addEventListener('input', debounce(async (e) => {
         navigateTo('clients');
       } else if (action === 'service') {
         navigateTo('services');
+      } else if (action === 'document') {
+        navigateTo('documents');
+        setTimeout(() => openDocumentPreview(parseInt(id)), 300);
       }
     });
     item.addEventListener('mouseenter', () => {

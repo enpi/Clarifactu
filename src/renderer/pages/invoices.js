@@ -85,16 +85,37 @@ async function renderInvoices(container) {
             <option value="total-desc">Importe (mayor)</option>
             <option value="total-asc">Importe (menor)</option>
           </select>
-          <button class="btn btn-secondary btn-sm" id="export-csv-btn" style="flex-shrink:0;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            CSV
-          </button>
+          <div style="position:relative;flex-shrink:0;" id="inv-export-wrapper">
+            <button class="btn btn-secondary btn-sm" id="inv-export-toggle" style="display:flex;align-items:center;gap:5px;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Exportar
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div id="inv-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-lg,0 8px 24px rgba(0,0,0,.15));z-index:200;min-width:140px;overflow:hidden;">
+              <button id="export-csv-btn" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                CSV
+              </button>
+              <button id="export-excel-btn" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+                Excel
+              </button>
+              <button id="export-pdf-summary-btn" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                PDF
+              </button>
+            </div>
+          </div>
           <span id="invoice-count" class="text-muted" style="font-size:13px;"></span>
         </div>
       </div>
       <div id="bulk-action-bar" style="display:none;align-items:center;gap:10px;padding:8px 16px;background:var(--primary);color:#fff;font-size:13px;font-weight:500;">
         <span class="bulk-count"></span>
         <div style="flex:1;"></div>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);" id="bulk-paid-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Marcar cobradas
+        </button>
         <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);" id="bulk-email-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           Enviar email
@@ -148,11 +169,32 @@ async function renderInvoices(container) {
   document.getElementById('invoice-payment-filter').addEventListener('change', filterAndRenderInvoices);
   document.getElementById('invoice-sort').addEventListener('change', filterAndRenderInvoices);
 
+  // Export dropdown
+  const exportToggle = document.getElementById('inv-export-toggle');
+  const exportMenu   = document.getElementById('inv-export-menu');
+  exportToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportMenu.style.display = exportMenu.style.display === 'none' ? 'block' : 'none';
+  });
+  document.addEventListener('click', () => { exportMenu.style.display = 'none'; }, { capture: true, passive: true });
+
+  const getYear = () => { const el = document.getElementById('invoice-year-filter'); return el?.value ? parseInt(el.value) : null; };
+
   document.getElementById('export-csv-btn').addEventListener('click', async () => {
-    const yearEl = document.getElementById('invoice-year-filter');
-    const year = yearEl ? (yearEl.value ? parseInt(yearEl.value) : null) : null;
-    const result = await window.api.invoices.exportCSV(year);
+    exportMenu.style.display = 'none';
+    const result = await window.api.invoices.exportCSV(getYear());
     if (result.success) showToast('CSV exportado correctamente', 'success');
+  });
+  document.getElementById('export-excel-btn').addEventListener('click', async () => {
+    exportMenu.style.display = 'none';
+    const result = await window.api.invoices.exportExcel(getYear());
+    if (result.success) showToast('Excel exportado correctamente', 'success');
+  });
+  document.getElementById('export-pdf-summary-btn').addEventListener('click', async () => {
+    exportMenu.style.display = 'none';
+    const result = await window.api.invoices.exportPDFSummary(getYear());
+    if (result && result.success) showToast('PDF exportado correctamente', 'success');
+    else if (result && result.reason !== 'cancelled') showToast('Error al exportar PDF', 'error');
   });
 
   await loadInvoices();
@@ -177,6 +219,7 @@ async function renderInvoices(container) {
   document.getElementById('bulk-delete-btn').addEventListener('click', () => bulkDeleteInvoices());
   document.getElementById('bulk-pdf-btn').addEventListener('click', () => bulkDownloadPDFs());
   document.getElementById('bulk-email-btn').addEventListener('click', () => bulkSendEmails());
+  document.getElementById('bulk-paid-btn').addEventListener('click', () => bulkMarkAsPaid());
 }
 
 function generateInvoiceYearOptions(currentYear) {
@@ -602,6 +645,29 @@ async function deleteInvoice(id, number) {
 }
 
 // ─── Bulk Actions ─────────────────────────────────────────────────────────────
+
+async function bulkMarkAsPaid() {
+  const ids = [...selectedInvoiceIds];
+  const confirmed = await showConfirm(
+    `¿Marcar ${ids.length} factura${ids.length !== 1 ? 's' : ''} como cobradas?`,
+    `Se registrará la fecha de hoy como fecha de cobro en las facturas que aún estén pendientes.`,
+    'Marcar cobradas'
+  );
+  if (!confirmed) return;
+
+  const today = new Date().toISOString().split('T')[0];
+  let marked = 0;
+  for (const id of ids) {
+    try {
+      await window.api.invoices.markAsPaid(id, today);
+      marked++;
+    } catch (_) {}
+  }
+  showToast(`${marked} factura${marked !== 1 ? 's' : ''} marcada${marked !== 1 ? 's' : ''} como cobrada${marked !== 1 ? 's' : ''}`, 'success');
+  selectedInvoiceIds.clear();
+  await loadInvoices();
+}
+
 
 async function bulkDeleteInvoices() {
   const ids = [...selectedInvoiceIds];

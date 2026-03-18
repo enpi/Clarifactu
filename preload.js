@@ -35,7 +35,9 @@ contextBridge.exposeInMainWorld('api', {
     markAsPending: (id) => ipcRenderer.invoke('invoices:markAsPending', id),
     getByClient: (clientId) => ipcRenderer.invoke('invoices:getByClient', clientId),
     getOverdue: (days) => ipcRenderer.invoke('invoices:getOverdue', days),
-    exportCSV: (year) => ipcRenderer.invoke('invoices:exportCSV', year)
+    exportCSV: (year) => ipcRenderer.invoke('invoices:exportCSV', year),
+    exportExcel: (year) => ipcRenderer.invoke('invoices:exportExcel', year),
+    exportPDFSummary: (year) => ipcRenderer.invoke('invoices:exportPDFSummary', year)
   },
 
   // ── Activity Log ──────────────────────────────────────────────────────────
@@ -78,7 +80,19 @@ contextBridge.exposeInMainWorld('api', {
   dashboard: {
     getStats: () => ipcRenderer.invoke('dashboard:getStats'),
     getMonthlyData: (year) => ipcRenderer.invoke('dashboard:getMonthlyData', year),
-    getFiscalSummary: (year) => ipcRenderer.invoke('dashboard:getFiscalSummary', year)
+    getFiscalSummary: (year) => ipcRenderer.invoke('dashboard:getFiscalSummary', year),
+    getTopClients: (year) => ipcRenderer.invoke('dashboard:getTopClients', year),
+    getDocumentStats: () => ipcRenderer.invoke('dashboard:getDocumentStats'),
+    exportFiscalExcel: (year) => ipcRenderer.invoke('dashboard:exportFiscalExcel', year),
+    exportFiscalPDF: (year) => ipcRenderer.invoke('dashboard:exportFiscalPDF', year)
+  },
+
+  // ── Document Templates ────────────────────────────────────────────────────
+  documentTemplates: {
+    getAll: () => ipcRenderer.invoke('documentTemplates:getAll'),
+    create: (data) => ipcRenderer.invoke('documentTemplates:create', data),
+    update: (id, data) => ipcRenderer.invoke('documentTemplates:update', id, data),
+    delete: (id) => ipcRenderer.invoke('documentTemplates:delete', id)
   },
 
   // ── Verifactu ─────────────────────────────────────────────────────────────

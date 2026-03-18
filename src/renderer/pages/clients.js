@@ -124,9 +124,8 @@ function renderClientsTable(clients) {
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.notes) || '<span class="text-muted">-</span>'}</td>
       <td>
         <div class="table-actions">
-          <button class="btn btn-ghost btn-sm" title="Ver facturas" onclick="viewClientInvoices(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')">
+          <button class="btn btn-ghost btn-sm btn-icon" title="Ver historial" onclick="viewClientInvoices(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            Facturas
           </button>
           <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="openClientModal(${c.id})">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -225,13 +224,17 @@ async function openClientModal(id = null) {
 }
 
 async function viewClientInvoices(clientId, clientName) {
-  const invoices = await window.api.invoices.getByClient(clientId);
+  const [invoices, documents] = await Promise.all([
+    window.api.invoices.getByClient(clientId),
+    window.api.documents.getAll()
+  ]);
+  const clientDocs = documents.filter(d => d.client_id == clientId);
 
-  const totalBilled = invoices.reduce((s, i) => s + (i.total || 0), 0);
-  const totalPaid = invoices.filter(i => i.payment_status === 'pagada').reduce((s, i) => s + (i.total || 0), 0);
+  const totalBilled  = invoices.reduce((s, i) => s + (i.total || 0), 0);
+  const totalPaid    = invoices.filter(i => i.payment_status === 'pagada').reduce((s, i) => s + (i.total || 0), 0);
   const totalPending = totalBilled - totalPaid;
 
-  const rows = invoices.length === 0
+  const invoiceRows = invoices.length === 0
     ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary);">Sin facturas aún</td></tr>`
     : invoices.map(inv => {
         const paid = inv.payment_status === 'pagada';
@@ -247,7 +250,16 @@ async function viewClientInvoices(clientId, clientName) {
         </tr>`;
       }).join('');
 
-  openModal(`Facturas — ${clientName}`, `
+  const docRows = clientDocs.length === 0
+    ? `<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-secondary);">Sin documentos aún</td></tr>`
+    : clientDocs.map(doc => `
+        <tr>
+          <td class="fw-bold" style="font-size:13px;">${escapeHtml(doc.title)}</td>
+          <td style="font-size:12px;color:var(--text-secondary);">${formatDate((doc.created_at||'').split(' ')[0])}</td>
+          <td>${doc.email_sent_at ? `<span class="badge badge-green" style="font-size:10px;">Enviado</span>` : '<span class="text-muted" style="font-size:12px;">—</span>'}</td>
+        </tr>`).join('');
+
+  openModal(`Historial — ${clientName}`, `
     <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div style="flex:1;min-width:100px;background:#eff6ff;border-radius:8px;padding:10px 14px;">
         <div style="font-size:11px;color:#1e40af;font-weight:600;margin-bottom:2px;">Total facturado</div>
@@ -262,18 +274,72 @@ async function viewClientInvoices(clientId, clientName) {
         <div style="font-size:16px;font-weight:700;color:${totalPending > 0 ? '#b45309' : 'var(--text-secondary)'};">${formatCurrency(totalPending)}</div>
       </div>
     </div>
-    <div class="table-wrapper" style="max-height:340px;overflow-y:auto;">
-      <table>
-        <thead><tr>
-          <th>Número</th><th>Fecha</th><th class="text-right">Total</th><th style="text-align:center;">Estado</th><th>F. cobro</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+
+    <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm client-hist-tab active" data-tab="facturas" style="border-radius:6px 6px 0 0;">
+        Facturas (${invoices.length})
+      </button>
+      <button class="btn btn-ghost btn-sm client-hist-tab" data-tab="documentos" style="border-radius:6px 6px 0 0;">
+        Documentos (${clientDocs.length})
+      </button>
     </div>
+
+    <div id="client-hist-facturas" class="client-hist-panel">
+      <div class="table-wrapper" style="max-height:280px;overflow-y:auto;">
+        <table>
+          <thead><tr>
+            <th>Número</th><th>Fecha</th><th class="text-right">Total</th><th style="text-align:center;">Estado</th><th>F. cobro</th>
+          </tr></thead>
+          <tbody>${invoiceRows}</tbody>
+        </table>
+      </div>
+      ${invoices.length > 0 ? `
+        <div style="margin-top:10px;">
+          <button class="btn btn-secondary btn-sm" id="client-zip-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar todas como ZIP
+          </button>
+        </div>` : ''}
+    </div>
+
+    <div id="client-hist-documentos" class="client-hist-panel" style="display:none;">
+      <div class="table-wrapper" style="max-height:300px;overflow-y:auto;">
+        <table>
+          <thead><tr><th>Título</th><th>Fecha</th><th>Email</th></tr></thead>
+          <tbody>${docRows}</tbody>
+        </table>
+      </div>
+    </div>
+
     <div style="margin-top:12px;text-align:right;">
       <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cerrar</button>
     </div>
   `);
+
+  // Tab switching
+  document.querySelectorAll('.client-hist-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.client-hist-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.tab;
+      document.getElementById('client-hist-facturas').style.display  = target === 'facturas'   ? '' : 'none';
+      document.getElementById('client-hist-documentos').style.display = target === 'documentos' ? '' : 'none';
+    });
+  });
+
+  // ZIP export
+  document.getElementById('client-zip-btn')?.addEventListener('click', async () => {
+    const business = await window.api.settings.getBusiness();
+    showToast(`Generando ${invoices.length} PDF${invoices.length !== 1 ? 's' : ''}...`, 'info');
+    const payloads = [];
+    for (const inv of invoices) {
+      const items = await window.api.invoiceItems.getByInvoice(inv.id);
+      payloads.push({ htmlContent: generatePDFDocument(inv, items, business), invoiceNumber: inv.invoice_number });
+    }
+    const result = await window.api.exportPDFZip(payloads);
+    if (result.success) showToast(`ZIP guardado con ${payloads.length} facturas`, 'success');
+    else if (result.reason !== 'cancelled') showToast('Error al crear el ZIP', 'error');
+  });
 }
 
 async function deleteClient(id, name) {

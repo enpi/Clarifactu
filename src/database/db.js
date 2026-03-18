@@ -166,6 +166,16 @@ function runMigrations() {
     );
   `);
 
+  // Document templates
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS document_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      body TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+  `);
+
   // Documents
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (
@@ -561,6 +571,30 @@ const dashboard = {
 
     return months;
   },
+  getTopClients(year) {
+    return db.prepare(`
+      SELECT c.name as client_name, c.id as client_id,
+             COALESCE(SUM(i.total), 0) as total,
+             COUNT(*) as count
+      FROM invoices i
+      LEFT JOIN clients c ON i.client_id = c.id
+      WHERE strftime('%Y', i.date) = ?
+      GROUP BY i.client_id
+      ORDER BY total DESC
+      LIMIT 5
+    `).all(String(year));
+  },
+  getDocumentStats() {
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    const total = db.prepare('SELECT COUNT(*) as count FROM documents').get();
+    const sentThisMonth = db.prepare(`
+      SELECT COUNT(*) as count FROM documents
+      WHERE email_sent_at != '' AND email_sent_at IS NOT NULL
+        AND strftime('%Y-%m', email_sent_at) = ?
+    `).get(`${year}-${month}`);
+    return { total: total.count, sentThisMonth: sentThisMonth.count };
+  },
   getFiscalSummary(year) {
     const quarters = [
       { label: 'T1', start: '01', end: '03' },
@@ -677,6 +711,26 @@ const activityLog = {
   }
 };
 
+// ─── Document Templates ───────────────────────────────────────────────────────
+
+const documentTemplates = {
+  getAll() {
+    return db.prepare('SELECT * FROM document_templates ORDER BY name ASC').all();
+  },
+  create(data) {
+    const result = db.prepare('INSERT INTO document_templates (name, body) VALUES (@name, @body)').run(data);
+    return db.prepare('SELECT * FROM document_templates WHERE id = ?').get(result.lastInsertRowid);
+  },
+  update(id, data) {
+    db.prepare('UPDATE document_templates SET name=@name, body=@body WHERE id=@id').run({ ...data, id });
+    return db.prepare('SELECT * FROM document_templates WHERE id = ?').get(id);
+  },
+  delete(id) {
+    db.prepare('DELETE FROM document_templates WHERE id = ?').run(id);
+    return { success: true };
+  }
+};
+
 // ─── Documents ────────────────────────────────────────────────────────────────
 
 const documents = {
@@ -763,5 +817,6 @@ module.exports = {
   verifactu,
   emailSettings,
   activityLog,
-  documents
+  documents,
+  documentTemplates
 };
