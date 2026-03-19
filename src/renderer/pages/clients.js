@@ -52,7 +52,7 @@ async function renderClients(container) {
 
     <div class="card">
       <div class="card-header">
-        <div class="toolbar" style="margin-bottom:0;flex:1;flex-wrap:wrap;gap:8px;">
+        <div class="toolbar" style="margin-bottom:0;flex:1;">
           <div class="search-wrapper">
             <span class="search-icon">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -61,7 +61,9 @@ async function renderClients(container) {
             </span>
             <input type="text" class="search-input" id="client-search" placeholder="Buscar por nombre, NIF, email...">
           </div>
-          <div id="tag-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+          <select class="sort-select" id="tag-filter-select" style="min-width:160px;">
+            <option value="">Todas las etiquetas</option>
+          </select>
           <span id="client-count" class="text-muted" style="font-size:13px;"></span>
         </div>
       </div>
@@ -100,38 +102,21 @@ async function renderClients(container) {
 async function loadClients() {
   clientsAllData = await window.api.clients.getAll();
   clientsPage = 1;
-  renderTagFilterBar();
+  await populateTagSelect();
   filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
 }
 
-async function renderTagFilterBar() {
-  const bar = document.getElementById('tag-filter-bar');
-  if (!bar) return;
+async function populateTagSelect() {
+  const sel = document.getElementById('tag-filter-select');
+  if (!sel) return;
   const tags = await window.api.clients.getAllTags();
-  if (tags.length === 0) { bar.innerHTML = ''; return; }
-  bar.innerHTML = tags.map(tag => {
-    const c = getTagColor(tag);
-    const isActive = activeTagFilter === tag;
-    return `<button class="client-tag tag-filter-chip${isActive ? ' tag-filter-active' : ''}" data-tag="${escapeHtml(tag)}"
-      style="background:${isActive ? c.text : c.bg};color:${isActive ? '#fff' : c.text};border:none;cursor:pointer;padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:500;">
-      ${escapeHtml(tag)}
-    </button>`;
-  }).join('');
-  if (activeTagFilter) {
-    bar.innerHTML += `<button id="clear-tag-filter" style="background:none;border:1px solid var(--border);border-radius:12px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary);">✕ Limpiar</button>`;
-    document.getElementById('clear-tag-filter')?.addEventListener('click', () => {
-      activeTagFilter = '';
-      renderTagFilterBar();
-      filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
-    });
-  }
-  bar.querySelectorAll('.tag-filter-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tag = btn.dataset.tag;
-      activeTagFilter = activeTagFilter === tag ? '' : tag;
-      renderTagFilterBar();
-      filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
-    });
+  const current = sel.value;
+  sel.innerHTML = `<option value="">Todas las etiquetas</option>` +
+    tags.map(t => `<option value="${escapeHtml(t)}" ${current === t ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('');
+  sel.addEventListener('change', (e) => {
+    activeTagFilter = e.target.value;
+    clientsPage = 1;
+    filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
   });
 }
 
