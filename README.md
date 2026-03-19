@@ -1,4 +1,4 @@
-# Clarifactu
+# Clarifactu · v1.1.1
 
 Aplicación de escritorio para gestión de facturación orientada a profesionales de terapia y otros autónomos. Funciona completamente offline, sin suscripciones ni servicios en la nube.
 
@@ -19,6 +19,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 ### Clientes
 - Alta, edición y eliminación de clientes
 - Campos: nombre, NIF/DNI, email, teléfono, dirección, notas
+- **Etiquetas / categorías**: asigna etiquetas de color libres a cada cliente; filtro por etiqueta mediante desplegable en la barra de búsqueda
 - Búsqueda en tiempo real por nombre, NIF o email (filtrado local)
 - **Paginación** (20 por página) con filtros activos
 - **Historial del cliente**: modal con pestañas de Facturas (con resumen de total facturado, cobrado y pendiente) y Documentos; exportación de todas las facturas del cliente en un único ZIP
@@ -40,6 +41,13 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Badge visual cuando una factura ya ha sido enviada por correo
 - Edición, eliminación y **duplicación** de facturas existentes
 - **Paginación** (20 por página) con todos los filtros activos
+
+#### Facturas rectificativas (abonos)
+- Generación de **facturas rectificativas** (tipo R1) desde cualquier factura existente
+- Numeración independiente: `R-YYYY-NNNN` (serie propia, reinicio anual)
+- Los importes se pre-rellenan automáticamente en negativo
+- La factura original queda marcada como "Rectificada" con indicador visual
+- Identificador cruzado: la rectificativa enlaza con la factura de origen
 
 #### Selección múltiple y acciones en grupo
 - **Checkbox** por fila + "seleccionar todo" en cabecera (con estado indeterminado)
@@ -67,6 +75,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Gráfico de barras de ingresos mensuales
 - Gráfico de línea de evolución acumulada
 - **Gráfico de top 5 clientes** por volumen facturado (barras horizontales, seleccionable por año)
+- **Comparativa año a año**: gráfico de barras agrupadas que compara los ingresos mensuales de dos años cualesquiera (selector independiente por año)
 - Selector de año para navegar el historial
 - Últimas facturas emitidas
 - **Registro de actividad reciente** (últimas 25 acciones)
@@ -106,6 +115,18 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Búsqueda por título, contenido o cliente
 - **Ordenación** por título, destinatario o fecha (clic en cabecera de columna, asc/desc)
 - Registro en el **log de actividad** al enviar un documento por email
+
+### Onboarding inicial
+- **Asistente de configuración** de 4 pasos que se lanza automáticamente en el primer arranque
+- Pasos: Bienvenida → Datos de la empresa → Numeración de facturas (con vista previa en tiempo real) → Listo
+- Botón "Omitir" disponible en cualquier momento
+- Los usuarios existentes con datos ya guardados no verán el asistente
+
+### Actualizaciones automáticas
+- Comprobación automática de nuevas versiones al iniciar la aplicación
+- **Barra de descarga** en la parte inferior con progreso en tiempo real
+- **Banner de instalación** una vez descargada la actualización: aplica y reinicia con un clic
+- Distribución mediante **GitHub Releases**
 
 ### Configuración
 
@@ -201,8 +222,11 @@ npm start
 # Generar icono de la aplicación
 npm run icon
 
-# Generar ejecutable portable (.exe)
+# Generar instalador NSIS + ejecutable portable (.exe)
 npm run build
+
+# Publicar nueva versión en GitHub Releases
+GH_TOKEN=<tu_token> npm run publish
 ```
 
 ### Tests
@@ -245,6 +269,7 @@ Clarifactu/
 │           ├── new-invoice.js
 │           ├── invoices.js
 │           ├── documents.js
+│           ├── onboarding.js
 │           └── settings.js
 ├── tests/
 │   ├── unit/
@@ -270,6 +295,7 @@ Las migraciones se aplican automáticamente en cada arranque, por lo que actuali
 
 - La aplicación funciona **100% offline**. Ningún dato sale del equipo salvo el envío voluntario de facturas a la AEAT (Verifactu) o por email.
 - El logo y la firma se almacenan como base64 en la base de datos.
-- El contador de facturas se reinicia automáticamente cada año nuevo.
+- El contador de facturas (y el de rectificativas) se reinicia automáticamente cada año nuevo.
 - Los backups son copias exactas del archivo `.db` y pueden restaurarse en cualquier instalación de Clarifactu.
 - El sistema de licencias es offline; las claves son válidas en cualquier equipo que tenga el mismo binario.
+- Las actualizaciones automáticas solo funcionan en la versión instalada (no en modo `npm run dev`).
