@@ -8,7 +8,9 @@ contextBridge.exposeInMainWorld('api', {
     create: (data) => ipcRenderer.invoke('clients:create', data),
     update: (id, data) => ipcRenderer.invoke('clients:update', id, data),
     delete: (id) => ipcRenderer.invoke('clients:delete', id),
-    search: (query) => ipcRenderer.invoke('clients:search', query)
+    search: (query) => ipcRenderer.invoke('clients:search', query),
+    getAllTags: () => ipcRenderer.invoke('clients:getAllTags'),
+    getByTag: (tag) => ipcRenderer.invoke('clients:getByTag', tag)
   },
 
   // ── Services ─────────────────────────────────────────────────────────────
@@ -35,6 +37,8 @@ contextBridge.exposeInMainWorld('api', {
     markAsPending: (id) => ipcRenderer.invoke('invoices:markAsPending', id),
     getByClient: (clientId) => ipcRenderer.invoke('invoices:getByClient', clientId),
     getOverdue: (days) => ipcRenderer.invoke('invoices:getOverdue', days),
+    getByRectifiedId: (id) => ipcRenderer.invoke('invoices:getByRectifiedId', id),
+    markAsRectified: (id) => ipcRenderer.invoke('invoices:markAsRectified', id),
     exportCSV: (year) => ipcRenderer.invoke('invoices:exportCSV', year),
     exportExcel: (year) => ipcRenderer.invoke('invoices:exportExcel', year),
     exportPDFSummary: (year) => ipcRenderer.invoke('invoices:exportPDFSummary', year)
@@ -58,12 +62,16 @@ contextBridge.exposeInMainWorld('api', {
     getNumberSettings: () => ipcRenderer.invoke('settings:getNumberSettings'),
     saveNumberSettings: (data) => ipcRenderer.invoke('settings:saveNumberSettings', data),
     resetCounter: () => ipcRenderer.invoke('settings:resetCounter'),
-    saveAppearance: (data) => ipcRenderer.invoke('settings:saveAppearance', data)
+    saveAppearance: (data) => ipcRenderer.invoke('settings:saveAppearance', data),
+    isOnboardingDone: () => ipcRenderer.invoke('settings:isOnboardingDone'),
+    markOnboardingDone: () => ipcRenderer.invoke('settings:markOnboardingDone')
   },
 
   // ── Invoice Number ────────────────────────────────────────────────────────
   generateInvoiceNumber: () => ipcRenderer.invoke('generateInvoiceNumber'),
   commitInvoiceNumber: (counter) => ipcRenderer.invoke('commitInvoiceNumber', counter),
+  generateRectificativaNumber: () => ipcRenderer.invoke('generateRectificativaNumber'),
+  commitRectificativaNumber: (counter) => ipcRenderer.invoke('commitRectificativaNumber', counter),
 
   // ── PDF Export ────────────────────────────────────────────────────────────
   exportPDF: (data) => ipcRenderer.invoke('exportPDF', data),
@@ -83,6 +91,7 @@ contextBridge.exposeInMainWorld('api', {
     getFiscalSummary: (year) => ipcRenderer.invoke('dashboard:getFiscalSummary', year),
     getTopClients: (year) => ipcRenderer.invoke('dashboard:getTopClients', year),
     getDocumentStats: () => ipcRenderer.invoke('dashboard:getDocumentStats'),
+    getYearComparison: (year1, year2) => ipcRenderer.invoke('dashboard:getYearComparison', year1, year2),
     exportFiscalExcel: (year) => ipcRenderer.invoke('dashboard:exportFiscalExcel', year),
     exportFiscalPDF: (year) => ipcRenderer.invoke('dashboard:exportFiscalPDF', year)
   },
@@ -137,5 +146,15 @@ contextBridge.exposeInMainWorld('api', {
     exportPDF: (data) => ipcRenderer.invoke('documents:exportPDF', data),
     markEmailSent: (id) => ipcRenderer.invoke('documents:markEmailSent', id),
     sendEmail: (data) => ipcRenderer.invoke('documents:sendEmail', data)
+  },
+
+  // ── Auto-update ───────────────────────────────────────────────────────────
+  update: {
+    checkNow: () => ipcRenderer.invoke('update:checkNow'),
+    installNow: () => ipcRenderer.invoke('update:installNow'),
+    onAvailable: (cb) => ipcRenderer.on('update:available', (e, data) => cb(data)),
+    onProgress: (cb) => ipcRenderer.on('update:download-progress', (e, data) => cb(data)),
+    onDownloaded: (cb) => ipcRenderer.on('update:downloaded', (e, data) => cb(data)),
+    onError: (cb) => ipcRenderer.on('update:error', (e, data) => cb(data))
   },
 });

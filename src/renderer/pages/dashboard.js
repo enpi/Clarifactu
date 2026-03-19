@@ -85,6 +85,21 @@ async function renderDashboard(container) {
       </div>
     </div>
 
+    <div class="card" style="margin-bottom:20px;" id="year-comparison-card">
+      <div class="card-header">
+        <span class="card-title">Comparativa anual</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <label style="font-size:12px;color:var(--text-secondary);">Comparar con:</label>
+          <select class="year-select" id="dash-compare-year" style="font-size:12px;padding:4px 8px;">
+            ${generateYearOptions(year - 1)}
+          </select>
+        </div>
+      </div>
+      <div class="card-body" style="padding:16px;">
+        <div class="chart-wrapper"><canvas id="comparison-chart"></canvas></div>
+      </div>
+    </div>
+
     <div class="card" style="margin-top:20px;" id="fiscal-summary">
       <div class="loading" style="padding:20px;"><div class="spinner"></div>Cargando resumen fiscal...</div>
     </div>
@@ -112,22 +127,75 @@ function generateYearOptions(currentYear) {
 let barChart = null;
 let lineChart = null;
 let topClientsChart = null;
+let comparisonChart = null;
 
 async function loadDashboardData(year) {
-  const [stats, monthly, fiscal, topClients, docStats] = await Promise.all([
+  const compareYear = parseInt(document.getElementById('dash-compare-year')?.value || year - 1);
+  const [stats, monthly, fiscal, topClients, docStats, comparison] = await Promise.all([
     window.api.dashboard.getStats(),
     window.api.dashboard.getMonthlyData(year),
     window.api.dashboard.getFiscalSummary(year),
     window.api.dashboard.getTopClients(year),
-    window.api.dashboard.getDocumentStats()
+    window.api.dashboard.getDocumentStats(),
+    window.api.dashboard.getYearComparison(year, compareYear)
   ]);
 
   renderStats(stats, docStats);
   renderUnpaidWarning(stats);
   renderCharts(monthly, year);
   renderTopClients(topClients, year);
+  renderComparisonChart(comparison);
   renderFiscalSummary(fiscal, year);
   await Promise.all([loadRecentInvoices(), loadActivityLog()]);
+
+  // Wire compare-year select after rendering
+  document.getElementById('dash-compare-year')?.addEventListener('change', async (e) => {
+    const selectedYear = parseInt(document.getElementById('dash-year-select')?.value || new Date().getFullYear());
+    const cmp = await window.api.dashboard.getYearComparison(selectedYear, parseInt(e.target.value));
+    renderComparisonChart(cmp);
+  });
+}
+
+function renderComparisonChart(data) {
+  const canvas = document.getElementById('comparison-chart');
+  if (!canvas) return;
+  if (comparisonChart) comparisonChart.destroy();
+
+  const labels = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  comparisonChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: String(data.year1.year),
+          data: data.year1.data,
+          backgroundColor: 'rgba(37,99,235,0.8)',
+          borderRadius: 4,
+          borderSkipped: false
+        },
+        {
+          label: String(data.year2.year),
+          data: data.year2.data,
+          backgroundColor: 'rgba(16,185,129,0.5)',
+          borderRadius: 4,
+          borderSkipped: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { font: { size: 12 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, callback: (v) => formatCurrency(v) } }
+      }
+    }
+  });
 }
 
 function renderUnpaidWarning(stats) {

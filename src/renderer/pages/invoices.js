@@ -390,7 +390,9 @@ function renderInvoicesTable(invoices) {
         <input type="checkbox" class="inv-select-cb" data-id="${inv.id}" style="width:15px;height:15px;cursor:pointer;" ${selectedInvoiceIds.has(inv.id) ? 'checked' : ''}>
       </td>
       <td>
-        <span class="badge badge-blue">${escapeHtml(inv.invoice_number)}</span>
+        <span class="badge ${inv.tipo_factura === 'R1' ? 'badge-red' : 'badge-blue'}">${escapeHtml(inv.invoice_number)}</span>
+        ${inv.tipo_factura === 'R1' ? `<span style="font-size:10px;background:#fee2e2;color:#991b1b;border-radius:4px;padding:1px 5px;font-weight:600;margin-left:4px;">RECT</span>` : ''}
+        ${inv.rectified ? `<span style="font-size:10px;background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 5px;margin-left:4px;">Rectificada</span>` : ''}
         ${inv.email_sent_at ? `<span class="email-sent-badge" title="Email enviado el ${formatDateTime(inv.email_sent_at)}">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           Enviado
@@ -426,6 +428,9 @@ function renderInvoicesTable(invoices) {
           ${inv.client_email ? `<button class="btn btn-ghost btn-sm btn-icon" title="Enviar por email" onclick="sendInvoiceEmail(${inv.id})">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           </button>` : ''}
+          ${inv.tipo_factura !== 'R1' && !inv.rectified ? `<button class="btn btn-ghost btn-sm btn-icon" title="Crear rectificativa" onclick="createRectificativa(${inv.id})" style="color:#b45309;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+          </button>` : ''}
           <button class="btn btn-ghost btn-sm btn-icon danger" title="Eliminar" onclick="deleteInvoice(${inv.id}, '${escapeHtml(inv.invoice_number).replace(/'/g, "\\'")}')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           </button>
@@ -441,6 +446,10 @@ function editInvoice(id) {
 
 function duplicateInvoice(id) {
   navigateTo('new-invoice', { duplicateId: id });
+}
+
+function createRectificativa(id) {
+  navigateTo('new-invoice', { rectificativaOf: id });
 }
 
 async function togglePayment(id, newStatus) {

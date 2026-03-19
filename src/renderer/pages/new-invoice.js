@@ -4,10 +4,14 @@ let invoiceItems = [];
 let pendingInvoiceNumber = null;
 let pendingCounter = null;
 let editingInvoiceId = null;
+let rectificativaOf = null;
+let rectificativaCounter = null;
 
 async function renderNewInvoice(container, params = null) {
   editingInvoiceId = params?.editId || null;
   const duplicateId = params?.duplicateId || null;
+  rectificativaOf = params?.rectificativaOf || null;
+  rectificativaCounter = null;
 
   let existingInvoice = null;
   let existingItems = [];
@@ -29,6 +33,17 @@ async function renderNewInvoice(container, params = null) {
     pendingCounter = numResult.newCounter;
     existingInvoice = { ...srcInvoice, date: today() };
     existingItems = srcItems;
+  } else if (rectificativaOf) {
+    const [srcInvoice, srcItems, numResult] = await Promise.all([
+      window.api.invoices.getById(rectificativaOf),
+      window.api.invoiceItems.getByInvoice(rectificativaOf),
+      window.api.generateRectificativaNumber()
+    ]);
+    pendingInvoiceNumber = numResult.invoiceNumber;
+    rectificativaCounter = numResult.newCounter;
+    pendingCounter = null;
+    existingInvoice = { ...srcInvoice, date: today() };
+    existingItems = srcItems.map(item => ({ ...item, unit_price: -Math.abs(item.unit_price), total: -Math.abs(item.total) }));
   } else {
     const { invoiceNumber, newCounter } = await window.api.generateInvoiceNumber();
     pendingInvoiceNumber = invoiceNumber;
@@ -54,10 +69,13 @@ async function renderNewInvoice(container, params = null) {
   container.innerHTML = `
     <div class="page-header">
       <div>
-        <h1 class="page-title">${editingInvoiceId ? 'Editar Factura' : 'Nueva Factura'}</h1>
-        <p class="page-subtitle">${editingInvoiceId ? `Modificando ${escapeHtml(pendingInvoiceNumber)}` : duplicateId ? `Copia de factura · ${escapeHtml(pendingInvoiceNumber)}` : 'Crea una nueva factura'}</p>
+        <h1 class="page-title">${editingInvoiceId ? 'Editar Factura' : rectificativaOf ? 'Factura Rectificativa' : 'Nueva Factura'}</h1>
+        <p class="page-subtitle">${editingInvoiceId ? `Modificando ${escapeHtml(pendingInvoiceNumber)}` : rectificativaOf ? `Anulación de factura · ${escapeHtml(pendingInvoiceNumber)}` : duplicateId ? `Copia de factura · ${escapeHtml(pendingInvoiceNumber)}` : 'Crea una nueva factura'}</p>
       </div>
     </div>
+    ${rectificativaOf ? `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
+      <strong>Factura rectificativa (R1)</strong> — Los importes aparecen en negativo para anular la factura original. Revisa los datos antes de guardar.
+    </div>` : ''}
 
     <div class="invoice-header-bar">
       <div>
@@ -420,6 +438,8 @@ async function saveInvoice() {
     irpf_rate: irpfRate,
     irpf_amount: irpfAmount,
     total,
+    tipo_factura: rectificativaOf ? 'R1' : 'F1',
+    factura_rectificada_id: rectificativaOf || null,
     items: invoiceItems.map(item => ({
       service_id: item.service_id,
       service_name: item.service_name,
@@ -440,7 +460,12 @@ async function saveInvoice() {
       invoice = await window.api.invoices.update(editingInvoiceId, invoiceData);
     } else {
       invoice = await window.api.invoices.create(invoiceData);
-      await window.api.commitInvoiceNumber(pendingCounter);
+      if (rectificativaOf && rectificativaCounter !== null) {
+        await window.api.commitRectificativaNumber(rectificativaCounter);
+        await window.api.invoices.markAsRectified(rectificativaOf);
+      } else {
+        await window.api.commitInvoiceNumber(pendingCounter);
+      }
     }
 
     // Calcular huella Verifactu automáticamente (solo si está activado)

@@ -4,6 +4,10 @@ const fs = require('fs');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 
+// ─── Auto-updater (only in packaged builds) ───────────────────────────────────
+let autoUpdater = null;
+try { ({ autoUpdater } = require('electron-updater')); } catch (_) {}
+
 // ─── License System ───────────────────────────────────────────────────────────
 const LICENSE_SECRET = 'clrf-license-secret-k9x2q7w4m1';
 
@@ -90,6 +94,11 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+
+    // Check for updates after window is visible (only in packaged app)
+    if (app.isPackaged && autoUpdater) {
+      setTimeout(() => autoUpdater.checkForUpdates(), 3000);
+    }
   });
 
   // Open DevTools in dev mode
@@ -140,6 +149,8 @@ ipcMain.handle('clients:create', (e, data) => db.clients.create(data));
 ipcMain.handle('clients:update', (e, id, data) => db.clients.update(id, data));
 ipcMain.handle('clients:delete', (e, id) => db.clients.delete(id));
 ipcMain.handle('clients:search', (e, query) => db.clients.search(query));
+ipcMain.handle('clients:getAllTags', () => db.clients.getAllTags());
+ipcMain.handle('clients:getByTag', (e, tag) => db.clients.getByTag(tag));
 
 // Services
 ipcMain.handle('services:getAll', () => db.services.getAll());
@@ -162,6 +173,8 @@ ipcMain.handle('invoices:markAsPaid', (e, id, date) => { db.invoices.markAsPaid(
 ipcMain.handle('invoices:markAsPending', (e, id) => { db.invoices.markAsPending(id); return { success: true }; });
 ipcMain.handle('invoices:getByClient', (e, clientId) => db.invoices.getByClient(clientId));
 ipcMain.handle('invoices:getOverdue', (e, days) => db.invoices.getOverdue(days));
+ipcMain.handle('invoices:getByRectifiedId', (e, id) => db.invoices.getByRectifiedId(id));
+ipcMain.handle('invoices:markAsRectified', (e, id) => { db.invoices.markAsRectified(id); return { success: true }; });
 
 ipcMain.handle('invoices:exportCSV', async (e, year) => {
   const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
@@ -419,6 +432,8 @@ ipcMain.handle('settings:getNumberSettings', () => db.settings.getNumberSettings
 ipcMain.handle('settings:saveNumberSettings', (e, data) => db.settings.saveNumberSettings(data));
 ipcMain.handle('settings:resetCounter', () => db.settings.resetCounter());
 ipcMain.handle('settings:saveAppearance', (e, data) => db.settings.saveAppearance(data));
+ipcMain.handle('settings:isOnboardingDone', () => db.settings.isOnboardingDone());
+ipcMain.handle('settings:markOnboardingDone', () => { db.settings.markOnboardingDone(); return true; });
 
 // Generate Invoice Number
 ipcMain.handle('generateInvoiceNumber', () => {
@@ -450,6 +465,27 @@ ipcMain.handle('commitInvoiceNumber', (e, counter) => {
   db.settings.updateCounter(counter);
   return true;
 });
+
+ipcMain.handle('generateRectificativaNumber', () => db.settings.generateRectificativaNumber());
+ipcMain.handle('commitRectificativaNumber', (e, counter) => { db.settings.commitRectificativaNumber(counter); return true; });
+
+// ─── Auto-updater IPC ─────────────────────────────────────────────────────────
+if (autoUpdater) {
+  autoUpdater.on('update-available', (info) => {
+    if (mainWindow) mainWindow.webContents.send('update:available', { version: info.version });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    if (mainWindow) mainWindow.webContents.send('update:download-progress', { percent: Math.round(progress.percent) });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    if (mainWindow) mainWindow.webContents.send('update:downloaded', { version: info.version });
+  });
+  autoUpdater.on('error', (err) => {
+    if (mainWindow) mainWindow.webContents.send('update:error', { message: err.message });
+  });
+}
+ipcMain.handle('update:checkNow', () => { if (autoUpdater) autoUpdater.checkForUpdates(); return { checking: true }; });
+ipcMain.handle('update:installNow', () => { if (autoUpdater) autoUpdater.quitAndInstall(false, true); });
 
 // Select Signature image (same as logo but different dialog title)
 ipcMain.handle('selectSignature', async () => {
@@ -641,6 +677,7 @@ ipcMain.handle('dashboard:getMonthlyData', (e, year) => db.dashboard.getMonthlyD
 ipcMain.handle('dashboard:getFiscalSummary', (e, year) => db.dashboard.getFiscalSummary(year));
 ipcMain.handle('dashboard:getTopClients', (e, year) => db.dashboard.getTopClients(year));
 ipcMain.handle('dashboard:getDocumentStats', () => db.dashboard.getDocumentStats());
+ipcMain.handle('dashboard:getYearComparison', (e, year1, year2) => db.dashboard.getYearComparison(year1, year2));
 
 // Document Templates
 ipcMain.handle('documentTemplates:getAll', () => db.documentTemplates.getAll());

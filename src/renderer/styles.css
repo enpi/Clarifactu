@@ -685,6 +685,17 @@ select.form-control {
 .badge-red { background: #fee2e2; color: #b91c1c; }
 .badge-orange { background: #ffedd5; color: #c2410c; }
 
+.client-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
 /* ─── Verifactu bar ─────────────────────────────────────────────────────────── */
 .verifactu-bar {
   display: flex;

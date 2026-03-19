@@ -528,3 +528,65 @@ function renderPagination(containerId, current, total, onPageChange) {
 })();
 
 navigateTo('dashboard');
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+(async function checkOnboarding() {
+  try {
+    const done = await window.api.settings.isOnboardingDone();
+    if (!done) setTimeout(() => showOnboardingWizard(), 500);
+  } catch (_) {}
+})();
+
+// ─── Auto-update notifications ────────────────────────────────────────────────
+(function initUpdateListeners() {
+  if (!window.api.update) return;
+
+  window.api.update.onAvailable((data) => {
+    showUpdateBar(`Descargando actualización ${data.version}...`);
+  });
+  window.api.update.onProgress((data) => {
+    const fill = document.getElementById('update-progress-fill');
+    if (fill) fill.style.width = data.percent + '%';
+    const msg = document.getElementById('update-bar-msg');
+    if (msg) msg.textContent = `Descargando v${data.version || ''}... ${data.percent}%`;
+  });
+  window.api.update.onDownloaded((data) => {
+    showUpdateReadyBanner(data.version);
+  });
+})();
+
+function showUpdateBar(message) {
+  let bar = document.getElementById('update-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'update-bar';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#2563eb;color:#fff;padding:10px 20px;font-size:13px;display:flex;align-items:center;gap:12px;z-index:9999;';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;">
+      <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+    </svg>
+    <span id="update-bar-msg">${message}</span>
+    <div id="update-progress-wrap" style="flex:1;max-width:200px;height:4px;background:rgba(255,255,255,0.3);border-radius:2px;overflow:hidden;">
+      <div id="update-progress-fill" style="height:100%;background:#fff;width:0%;transition:width 0.3s;"></div>
+    </div>
+  `;
+}
+
+function showUpdateReadyBanner(version) {
+  let bar = document.getElementById('update-bar');
+  if (!bar) { showUpdateBar(''); bar = document.getElementById('update-bar'); }
+  bar.style.background = '#059669';
+  bar.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+    <span>Versión ${escapeHtml(version)} lista para instalar.</span>
+    <div style="flex:1;"></div>
+    <button onclick="window.api.update.installNow()" style="background:#fff;color:#059669;border:none;padding:5px 14px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600;">
+      Instalar y reiniciar
+    </button>
+    <button onclick="document.getElementById('update-bar').remove()" style="background:none;border:none;color:#fff;cursor:pointer;padding:4px;font-size:16px;">×</button>
+  `;
+}

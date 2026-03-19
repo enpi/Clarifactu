@@ -142,6 +142,18 @@ function runMigrations() {
   // Overdue threshold
   try { db.exec("ALTER TABLE invoice_number_settings ADD COLUMN overdue_days INTEGER DEFAULT 30"); } catch (_) {}
 
+  // Client tags
+  try { db.exec("ALTER TABLE clients ADD COLUMN tags TEXT DEFAULT ''"); } catch (_) {}
+
+  // Rectifying invoices
+  try { db.exec("ALTER TABLE invoices ADD COLUMN tipo_factura TEXT DEFAULT 'F1'"); } catch (_) {}
+  try { db.exec("ALTER TABLE invoices ADD COLUMN factura_rectificada_id INTEGER DEFAULT NULL"); } catch (_) {}
+  try { db.exec("ALTER TABLE invoices ADD COLUMN rectified INTEGER DEFAULT 0"); } catch (_) {}
+  try { db.exec("ALTER TABLE invoice_number_settings ADD COLUMN rectificativa_counter INTEGER DEFAULT 0"); } catch (_) {}
+
+  // Onboarding flag
+  try { db.exec("ALTER TABLE business_settings ADD COLUMN onboarding_done INTEGER DEFAULT 0"); } catch (_) {}
+
   // Create email_settings table if not exists
   db.exec(`
     CREATE TABLE IF NOT EXISTS email_settings (
@@ -234,19 +246,19 @@ const clients = {
   },
   create(data) {
     const stmt = db.prepare(`
-      INSERT INTO clients (name, nif, address, email, phone, notes)
-      VALUES (@name, @nif, @address, @email, @phone, @notes)
+      INSERT INTO clients (name, nif, address, email, phone, notes, tags)
+      VALUES (@name, @nif, @address, @email, @phone, @notes, @tags)
     `);
-    const result = stmt.run(data);
+    const result = stmt.run({ tags: '', ...data });
     return { id: result.lastInsertRowid, ...data };
   },
   update(id, data) {
     const stmt = db.prepare(`
       UPDATE clients SET name=@name, nif=@nif, address=@address,
-        email=@email, phone=@phone, notes=@notes
+        email=@email, phone=@phone, notes=@notes, tags=@tags
       WHERE id=@id
     `);
-    stmt.run({ ...data, id });
+    stmt.run({ tags: '', ...data, id });
     return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
   },
   delete(id) {
@@ -260,6 +272,16 @@ const clients = {
       WHERE name LIKE ? OR nif LIKE ? OR email LIKE ? OR phone LIKE ?
       ORDER BY name ASC
     `).all(q, q, q, q);
+  },
+  getAllTags() {
+    const rows = db.prepare(`SELECT tags FROM clients WHERE tags IS NOT NULL AND tags != ''`).all();
+    const tagSet = new Set();
+    rows.forEach(r => r.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t)));
+    return Array.from(tagSet).sort();
+  },
+  getByTag(tag) {
+    const q = `%${tag}%`;
+    return db.prepare(`SELECT * FROM clients WHERE tags LIKE ? ORDER BY name ASC`).all(q);
   }
 };
 
@@ -328,8 +350,8 @@ const invoices = {
     const { items, ...invoiceData } = data;
 
     const insertInvoice = db.prepare(`
-      INSERT INTO invoices (invoice_number, client_id, date, notes, subtotal, tax_rate, tax_amount, irpf_rate, irpf_amount, total)
-      VALUES (@invoice_number, @client_id, @date, @notes, @subtotal, @tax_rate, @tax_amount, @irpf_rate, @irpf_amount, @total)
+      INSERT INTO invoices (invoice_number, client_id, date, notes, subtotal, tax_rate, tax_amount, irpf_rate, irpf_amount, total, tipo_factura, factura_rectificada_id)
+      VALUES (@invoice_number, @client_id, @date, @notes, @subtotal, @tax_rate, @tax_amount, @irpf_rate, @irpf_amount, @total, @tipo_factura, @factura_rectificada_id)
     `);
 
     const insertItem = db.prepare(`
@@ -338,7 +360,7 @@ const invoices = {
     `);
 
     const transaction = db.transaction(() => {
-      const result = insertInvoice.run(invoiceData);
+      const result = insertInvoice.run({ tipo_factura: 'F1', factura_rectificada_id: null, ...invoiceData });
       const invoiceId = result.lastInsertRowid;
 
       for (const item of items) {
@@ -444,6 +466,17 @@ const invoices = {
       WHERE i.payment_status != 'pagada' AND i.date <= ?
       ORDER BY i.date ASC
     `).all(cutoffStr);
+  },
+  getByRectifiedId(id) {
+    return db.prepare(`
+      SELECT i.*, c.name as client_name
+      FROM invoices i LEFT JOIN clients c ON i.client_id = c.id
+      WHERE i.factura_rectificada_id = ?
+      ORDER BY i.date DESC
+    `).all(id);
+  },
+  markAsRectified(id) {
+    db.prepare(`UPDATE invoices SET rectified = 1 WHERE id = ?`).run(id);
   }
 };
 
@@ -514,6 +547,31 @@ const settings = {
     db.prepare(`
       UPDATE invoice_number_settings SET counter=? WHERE id=1
     `).run(counter);
+  },
+  generateRectificativaNumber() {
+    const s = db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
+    const year = new Date().getFullYear();
+    const sep = s.separator || '-';
+    const digits = s.digits || 4;
+    const newCounter = (s.rectificativa_counter || 0) + 1;
+    const padded = String(newCounter).padStart(digits, '0');
+    const number = `R${sep}${year}${sep}${padded}`;
+    return { invoiceNumber: number, newCounter };
+  },
+  commitRectificativaNumber(counter) {
+    db.prepare('UPDATE invoice_number_settings SET rectificativa_counter=? WHERE id=1').run(counter);
+  },
+  isOnboardingDone() {
+    const row = db.prepare('SELECT onboarding_done, name FROM business_settings WHERE id = 1').get();
+    // Auto-mark done for existing users who already have data
+    if (row && !row.onboarding_done && row.name && row.name.trim() !== '') {
+      db.prepare('UPDATE business_settings SET onboarding_done = 1 WHERE id = 1').run();
+      return true;
+    }
+    return !!(row && row.onboarding_done);
+  },
+  markOnboardingDone() {
+    db.prepare('UPDATE business_settings SET onboarding_done = 1 WHERE id = 1').run();
   }
 };
 
@@ -594,6 +652,24 @@ const dashboard = {
         AND strftime('%Y-%m', email_sent_at) = ?
     `).get(`${year}-${month}`);
     return { total: total.count, sentThisMonth: sentThisMonth.count };
+  },
+  getYearComparison(year1, year2) {
+    const getMonthly = (y) => db.prepare(`
+      SELECT CAST(strftime('%m', date) AS INTEGER) as month,
+             COALESCE(SUM(total), 0) as total
+      FROM invoices
+      WHERE strftime('%Y', date) = ?
+        AND (tipo_factura IS NULL OR tipo_factura = 'F1')
+      GROUP BY month ORDER BY month ASC
+    `).all(String(y));
+    const fill = (rows) => Array.from({ length: 12 }, (_, i) => {
+      const found = rows.find(r => r.month === i + 1);
+      return found ? found.total : 0;
+    });
+    return {
+      year1: { year: year1, data: fill(getMonthly(year1)) },
+      year2: { year: year2, data: fill(getMonthly(year2)) }
+    };
   },
   getFiscalSummary(year) {
     const quarters = [

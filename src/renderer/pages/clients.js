@@ -4,6 +4,36 @@ let clientsAllData = [];
 let clientsFilteredData = [];
 let clientsPage = 1;
 const CLIENTS_PER_PAGE = 20;
+let activeTagFilter = '';
+
+const TAG_COLORS = [
+  { bg: '#dbeafe', text: '#1d4ed8' },
+  { bg: '#dcfce7', text: '#166534' },
+  { bg: '#fce7f3', text: '#9d174d' },
+  { bg: '#fef3c7', text: '#92400e' },
+  { bg: '#ede9fe', text: '#5b21b6' },
+  { bg: '#fee2e2', text: '#991b1b' },
+  { bg: '#e0f2fe', text: '#0369a1' },
+  { bg: '#f3f4f6', text: '#374151' },
+];
+
+function getTagColor(tag) {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+function renderTagBadge(tag, removable = false) {
+  const c = getTagColor(tag);
+  if (removable) {
+    return `<span class="client-tag" style="background:${c.bg};color:${c.text};" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}<button type="button" class="tag-remove-btn" data-tag="${escapeHtml(tag)}" style="background:none;border:none;cursor:pointer;color:${c.text};margin-left:3px;padding:0;font-size:11px;line-height:1;">×</button></span>`;
+  }
+  return `<span class="client-tag" style="background:${c.bg};color:${c.text};">${escapeHtml(tag)}</span>`;
+}
+
+function parseTags(tagsStr) {
+  return (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
+}
 
 async function renderClients(container) {
   container.innerHTML = `
@@ -22,7 +52,7 @@ async function renderClients(container) {
 
     <div class="card">
       <div class="card-header">
-        <div class="toolbar" style="margin-bottom:0;flex:1;">
+        <div class="toolbar" style="margin-bottom:0;flex:1;flex-wrap:wrap;gap:8px;">
           <div class="search-wrapper">
             <span class="search-icon">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -31,6 +61,7 @@ async function renderClients(container) {
             </span>
             <input type="text" class="search-input" id="client-search" placeholder="Buscar por nombre, NIF, email...">
           </div>
+          <div id="tag-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
           <span id="client-count" class="text-muted" style="font-size:13px;"></span>
         </div>
       </div>
@@ -42,7 +73,7 @@ async function renderClients(container) {
               <th>NIF</th>
               <th>Email</th>
               <th>Teléfono</th>
-              <th>Notas</th>
+              <th>Etiquetas</th>
               <th style="width:150px;"></th>
             </tr>
           </thead>
@@ -69,7 +100,39 @@ async function renderClients(container) {
 async function loadClients() {
   clientsAllData = await window.api.clients.getAll();
   clientsPage = 1;
+  renderTagFilterBar();
   filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
+}
+
+async function renderTagFilterBar() {
+  const bar = document.getElementById('tag-filter-bar');
+  if (!bar) return;
+  const tags = await window.api.clients.getAllTags();
+  if (tags.length === 0) { bar.innerHTML = ''; return; }
+  bar.innerHTML = tags.map(tag => {
+    const c = getTagColor(tag);
+    const isActive = activeTagFilter === tag;
+    return `<button class="client-tag tag-filter-chip${isActive ? ' tag-filter-active' : ''}" data-tag="${escapeHtml(tag)}"
+      style="background:${isActive ? c.text : c.bg};color:${isActive ? '#fff' : c.text};border:none;cursor:pointer;padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:500;">
+      ${escapeHtml(tag)}
+    </button>`;
+  }).join('');
+  if (activeTagFilter) {
+    bar.innerHTML += `<button id="clear-tag-filter" style="background:none;border:1px solid var(--border);border-radius:12px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary);">✕ Limpiar</button>`;
+    document.getElementById('clear-tag-filter')?.addEventListener('click', () => {
+      activeTagFilter = '';
+      renderTagFilterBar();
+      filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
+    });
+  }
+  bar.querySelectorAll('.tag-filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tag = btn.dataset.tag;
+      activeTagFilter = activeTagFilter === tag ? '' : tag;
+      renderTagFilterBar();
+      filterAndRenderClients(document.getElementById('client-search')?.value.trim() || '');
+    });
+  });
 }
 
 function filterAndRenderClients(query = '') {
@@ -80,7 +143,13 @@ function filterAndRenderClients(query = '') {
         (c.nif || '').toLowerCase().includes(q) ||
         (c.email || '').toLowerCase().includes(q)
       )
-    : clientsAllData;
+    : [...clientsAllData];
+
+  if (activeTagFilter) {
+    clientsFilteredData = clientsFilteredData.filter(c =>
+      parseTags(c.tags).includes(activeTagFilter)
+    );
+  }
 
   const countEl = document.getElementById('client-count');
   if (countEl) countEl.textContent = `${clientsFilteredData.length} cliente${clientsFilteredData.length !== 1 ? 's' : ''}`;
@@ -121,7 +190,7 @@ function renderClientsTable(clients) {
       <td>${escapeHtml(c.nif) || '<span class="text-muted">-</span>'}</td>
       <td>${escapeHtml(c.email) || '<span class="text-muted">-</span>'}</td>
       <td>${escapeHtml(c.phone) || '<span class="text-muted">-</span>'}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.notes) || '<span class="text-muted">-</span>'}</td>
+      <td style="max-width:200px;">${parseTags(c.tags).map(t => renderTagBadge(t)).join(' ') || '<span class="text-muted">-</span>'}</td>
       <td>
         <div class="table-actions">
           <button class="btn btn-ghost btn-sm btn-icon" title="Ver historial" onclick="viewClientInvoices(${c.id}, '${escapeHtml(c.name).replace(/'/g, "\\'")}')">
@@ -149,11 +218,15 @@ function renderClientsTable(clients) {
 
 async function openClientModal(id = null) {
   const isEdit = id !== null;
-  let client = { name: '', nif: '', address: '', email: '', phone: '', notes: '' };
+  let client = { name: '', nif: '', address: '', email: '', phone: '', notes: '', tags: '' };
+  let modalTags = [];
 
   if (isEdit) {
     client = await window.api.clients.getById(id);
+    modalTags = parseTags(client.tags);
   }
+
+  const existingTagSuggestions = await window.api.clients.getAllTags();
 
   openModal(isEdit ? 'Editar cliente' : 'Nuevo cliente', `
     <form id="client-form">
@@ -183,6 +256,16 @@ async function openClientModal(id = null) {
         <label class="form-label">Notas</label>
         <textarea class="form-control" id="client-notes" placeholder="Notas adicionales...">${escapeHtml(client.notes || '')}</textarea>
       </div>
+      <div class="form-group">
+        <label class="form-label">Etiquetas</label>
+        <div id="tags-input-area" style="border:1px solid var(--border);border-radius:8px;padding:6px 8px;display:flex;flex-wrap:wrap;gap:4px;min-height:38px;cursor:text;background:var(--card-bg);" onclick="document.getElementById('tag-text-input').focus()">
+          <span id="tags-badges-container" style="display:contents;"></span>
+          <input type="text" id="tag-text-input" placeholder="Añadir etiqueta y pulsar Enter..." style="border:none;outline:none;background:transparent;font-size:13px;flex:1;min-width:120px;color:var(--text-primary);">
+        </div>
+        ${existingTagSuggestions.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;" id="tag-suggestions">
+          ${existingTagSuggestions.map(tag => `<button type="button" class="tag-suggestion" data-tag="${escapeHtml(tag)}" style="background:var(--content-bg);border:1px solid var(--border);border-radius:10px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-secondary);">${escapeHtml(tag)}</button>`).join('')}
+        </div>` : ''}
+      </div>
       <div class="modal-footer" style="padding:0;margin-top:8px;border-top:none;">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
         <button type="submit" class="btn btn-primary">${isEdit ? 'Guardar cambios' : 'Crear cliente'}</button>
@@ -190,8 +273,53 @@ async function openClientModal(id = null) {
     </form>
   `);
 
+  // Tags input logic
+  function renderModalTags() {
+    const container = document.getElementById('tags-badges-container');
+    if (!container) return;
+    container.innerHTML = modalTags.map(tag => renderTagBadge(tag, true)).join('');
+    container.querySelectorAll('.tag-remove-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        modalTags = modalTags.filter(t => t !== btn.dataset.tag);
+        renderModalTags();
+      });
+    });
+  }
+
+  function addTag(tag) {
+    const trimmed = tag.trim().replace(/,/g, '').substring(0, 30);
+    if (trimmed && !modalTags.includes(trimmed)) {
+      modalTags.push(trimmed);
+      renderModalTags();
+    }
+  }
+
+  renderModalTags();
+
+  document.getElementById('tag-text-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = e.target.value.trim();
+      if (val) { addTag(val); e.target.value = ''; }
+    } else if (e.key === 'Backspace' && !e.target.value && modalTags.length > 0) {
+      modalTags.pop();
+      renderModalTags();
+    }
+  });
+
+  document.querySelectorAll('.tag-suggestion').forEach(btn => {
+    btn.addEventListener('click', () => {
+      addTag(btn.dataset.tag);
+      document.getElementById('tag-text-input')?.focus();
+    });
+  });
+
   document.getElementById('client-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // Flush any typed tag not yet confirmed
+    const tagInput = document.getElementById('tag-text-input');
+    if (tagInput?.value.trim()) addTag(tagInput.value.trim());
 
     const data = {
       name: document.getElementById('client-name').value.trim(),
@@ -199,7 +327,8 @@ async function openClientModal(id = null) {
       email: document.getElementById('client-email').value.trim(),
       phone: document.getElementById('client-phone').value.trim(),
       address: document.getElementById('client-address').value.trim(),
-      notes: document.getElementById('client-notes').value.trim()
+      notes: document.getElementById('client-notes').value.trim(),
+      tags: modalTags.join(',')
     };
 
     if (!data.name) {
