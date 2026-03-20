@@ -576,7 +576,7 @@ async function renderSettings(container) {
       await window.api.update.checkNow();
       setTimeout(() => {
         if (msg.textContent.includes('Comprobando')) {
-          msg.textContent = 'No hay actualizaciones disponibles. La app está al día.';
+          msg.innerHTML = '<span style="color:#059669;display:inline-flex;align-items:center;gap:5px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> La app está al día.</span>';
         }
         btn.disabled = false;
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Buscar ahora`;
