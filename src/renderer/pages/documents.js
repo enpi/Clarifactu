@@ -291,8 +291,38 @@ async function openDocumentModal(id = null) {
           <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{fecha}</code> o
           <code style="background:var(--content-bg);padding:1px 4px;border-radius:3px;">{hoy}</code> para insertar datos automáticamente.
         </p>
-        <textarea class="form-control" id="doc-body" rows="10"
-          placeholder="Escribe aquí el cuerpo del documento…">${escapeHtml(doc.body || '')}</textarea>
+        <div class="rich-toolbar" id="rich-toolbar">
+          <button type="button" data-cmd="bold"          title="Negrita (Ctrl+B)"  style="font-weight:700;">B</button>
+          <button type="button" data-cmd="italic"        title="Cursiva (Ctrl+I)"  style="font-style:italic;">I</button>
+          <button type="button" data-cmd="underline"     title="Subrayado (Ctrl+U)" style="text-decoration:underline;">S</button>
+          <button type="button" data-cmd="strikeThrough" title="Tachado"            style="text-decoration:line-through;">T</button>
+          <span class="tb-sep"></span>
+          <button type="button" data-cmd="justifyLeft"   title="Alinear izquierda">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+          </button>
+          <button type="button" data-cmd="justifyCenter" title="Centrar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+          </button>
+          <button type="button" data-cmd="justifyRight"  title="Alinear derecha">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="10" x2="7" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="7" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg>
+          </button>
+          <span class="tb-sep"></span>
+          <button type="button" data-cmd="insertUnorderedList" title="Lista con viñetas">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
+          </button>
+          <button type="button" data-cmd="insertOrderedList" title="Lista numerada">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10H5"/><path d="M3 14h2v1l-2 2h2"/></svg>
+          </button>
+          <span class="tb-sep"></span>
+          <button type="button" data-cmd="formatBlock" data-val="h1" title="Título grande" style="font-size:11px;font-weight:700;">H1</button>
+          <button type="button" data-cmd="formatBlock" data-val="h2" title="Título medio"  style="font-size:11px;font-weight:700;">H2</button>
+          <button type="button" data-cmd="formatBlock" data-val="p"  title="Párrafo normal" style="font-size:11px;">¶</button>
+          <span class="tb-sep"></span>
+          <button type="button" id="rich-clear-format" title="Quitar formato">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M5 20h6"/><path d="M13 4l-7 16"/><line x1="18" y1="12" x2="22" y2="16"/><line x1="22" y1="12" x2="18" y2="16"/></svg>
+          </button>
+        </div>
+        <div class="rich-editor" id="doc-body" contenteditable="true" spellcheck="true"></div>
       </div>
       <div class="modal-footer" style="padding:0;margin-top:8px;border-top:none;">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -300,6 +330,39 @@ async function openDocumentModal(id = null) {
       </div>
     </form>
   `, { size: 'lg' });
+
+  // Init rich editor content
+  const editor = document.getElementById('doc-body');
+  document.execCommand('defaultParagraphSeparator', false, 'p');
+  if (doc.body) {
+    editor.innerHTML = renderBodyHtml(doc.body);
+  }
+
+  // Toolbar buttons
+  document.querySelectorAll('#rich-toolbar [data-cmd]').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const val = btn.dataset.val || null;
+      document.execCommand(btn.dataset.cmd, false, val);
+      editor.focus();
+    });
+  });
+
+  document.getElementById('rich-clear-format')?.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    document.execCommand('removeFormat', false, null);
+    editor.focus();
+  });
+
+  // Highlight active toolbar buttons on selection change
+  editor.addEventListener('keyup', updateToolbarState);
+  editor.addEventListener('mouseup', updateToolbarState);
+  function updateToolbarState() {
+    ['bold','italic','underline','strikeThrough'].forEach(cmd => {
+      const btn = document.querySelector(`#rich-toolbar [data-cmd="${cmd}"]`);
+      if (btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+    });
+  }
 
   // Apply template button
   const applyBtn = document.getElementById('doc-apply-tpl-btn');
@@ -310,17 +373,16 @@ async function openDocumentModal(id = null) {
       const tpl = templates.find(t => t.id === tplId);
       if (!tpl) return;
       const titleEl = document.getElementById('doc-title');
-      const bodyEl  = document.getElementById('doc-body');
       if (!titleEl.value) titleEl.value = tpl.name;
-      bodyEl.value = tpl.body || '';
-      bodyEl.focus();
+      editor.innerHTML = renderBodyHtml(tpl.body || '');
+      editor.focus();
     });
   }
 
   document.getElementById('doc-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const title = document.getElementById('doc-title').value.trim();
-    const body  = document.getElementById('doc-body').value;
+    const body  = document.getElementById('doc-body').innerHTML;
     const client_id = document.getElementById('doc-client').value || null;
 
     if (!title) {
@@ -694,6 +756,14 @@ function resolveDocVariables(body, doc) {
     .replace(/\{hoy\}/gi,    today);
 }
 
+// ─── Body render helper (HTML o texto plano legacy) ───────────────────────────
+
+function renderBodyHtml(body) {
+  if (!body) return '';
+  if (/<[a-z][\s\S]*>/i.test(body)) return body; // ya es HTML
+  return body.split('\n').map(l => `<p>${escapeHtml(l) || '&nbsp;'}</p>`).join('');
+}
+
 // ─── Plantilla compartida (preview y PDF) ─────────────────────────────────────
 
 function buildDocumentTemplateInner(doc, business) {
@@ -708,10 +778,7 @@ function buildDocumentTemplateInner(doc, business) {
   const clientBirth  = doc.client_birth_date
     ? new Date(doc.client_birth_date + 'T00:00:00').toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
-  const resolvedBody = resolveDocVariables(doc.body, doc);
-  const bodyLines    = resolvedBody.split('\n')
-    .map(l => `<p style="margin:0 0 10px 0;min-height:1em;">${escapeHtml(l) || '&nbsp;'}</p>`)
-    .join('');
+  const bodyHtml     = renderBodyHtml(resolveDocVariables(doc.body, doc));
   const sigHtml = business && business.signature
     ? `<img src="${business.signature}" style="max-height:56px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px auto;" alt="Firma">`
     : '';
@@ -742,7 +809,7 @@ function buildDocumentTemplateInner(doc, business) {
     </h2>
 
     <div style="font-size:13.5px;color:var(--text-primary);line-height:1.75;margin-bottom:48px;">
-      ${bodyLines}
+      ${bodyHtml}
     </div>
 
     <div style="border-top:1px solid var(--border);padding-top:24px;
@@ -774,10 +841,7 @@ function buildDocumentPDFHtml(doc, business) {
   const clientBirth  = doc.client_birth_date
     ? new Date(doc.client_birth_date + 'T00:00:00').toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
-  const resolvedBody = resolveDocVariables(doc.body, doc);
-  const bodyLines    = resolvedBody.split('\n')
-    .map(l => `<p>${escapeHtml(l) || '&nbsp;'}</p>`)
-    .join('');
+  const bodyHtml2    = renderBodyHtml(resolveDocVariables(doc.body, doc));
   const sigHtml = business && business.signature
     ? `<img src="${business.signature}" style="max-height:56px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px auto;" alt="Firma">`
     : '';
@@ -823,7 +887,7 @@ function buildDocumentPDFHtml(doc, business) {
   </h2>
 
   <div style="font-size:13.5px;color:#1e293b;line-height:1.75;margin-bottom:56px;">
-    ${bodyLines}
+    ${bodyHtml2}
   </div>
 
   <div style="border-top:1px solid #e2e8f0;padding-top:24px;display:flex;justify-content:space-between;align-items:flex-end;">
