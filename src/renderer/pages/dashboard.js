@@ -122,7 +122,7 @@ async function renderDashboard(container) {
 
     <!-- TAB: Fiscal -->
     <div class="dash-panel" id="panel-fiscal">
-      <div id="fiscal-summary">
+      <div id="fiscal-summary" class="card">
         <div class="loading" style="padding:20px;"><div class="spinner"></div>Cargando resumen fiscal...</div>
       </div>
     </div>
