@@ -238,7 +238,7 @@ async function openClientModal(id = null) {
         <input type="text" class="form-control" id="client-address" value="${escapeHtml(client.address || '')}" placeholder="Calle, número, ciudad">
       </div>
       <div class="form-group">
-        <label class="form-label">Fecha de nacimiento <span style="color:var(--text-secondary);font-weight:400;">(opcional)</span></label>
+        <label class="form-label">Fecha de nacimiento</label>
         <input type="date" class="form-control" id="client-birth-date" value="${escapeHtml(client.birth_date || '')}">
       </div>
       <div class="form-group">

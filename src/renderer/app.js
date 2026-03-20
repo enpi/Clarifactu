@@ -64,9 +64,7 @@ function closeModal() {
 }
 
 modalCloseBtn.addEventListener('click', closeModal);
-modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
+// Click outside modal does NOT close it (too easy to lose work accidentally)
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 const confirmOverlay = document.getElementById('confirm-overlay');
