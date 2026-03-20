@@ -203,7 +203,7 @@ function renderClientsTable(clients) {
 
 async function openClientModal(id = null) {
   const isEdit = id !== null;
-  let client = { name: '', nif: '', address: '', email: '', phone: '', notes: '', tags: '' };
+  let client = { name: '', nif: '', address: '', email: '', phone: '', notes: '', tags: '', birth_date: '' };
   let modalTags = [];
 
   if (isEdit) {
@@ -228,6 +228,10 @@ async function openClientModal(id = null) {
           <label class="form-label">Teléfono</label>
           <input type="text" class="form-control" id="client-phone" value="${escapeHtml(client.phone || '')}" placeholder="+34 600 000 000">
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha de nacimiento <span style="color:var(--text-secondary);font-weight:400;">(opcional)</span></label>
+        <input type="date" class="form-control" id="client-birth-date" value="${escapeHtml(client.birth_date || '')}">
       </div>
       <div class="form-group">
         <label class="form-label">Email</label>
@@ -313,7 +317,8 @@ async function openClientModal(id = null) {
       phone: document.getElementById('client-phone').value.trim(),
       address: document.getElementById('client-address').value.trim(),
       notes: document.getElementById('client-notes').value.trim(),
-      tags: modalTags.join(',')
+      tags: modalTags.join(','),
+      birth_date: document.getElementById('client-birth-date').value || ''
     };
 
     if (!data.name) {

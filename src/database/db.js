@@ -145,6 +145,9 @@ function runMigrations() {
   // Client tags
   try { db.exec("ALTER TABLE clients ADD COLUMN tags TEXT DEFAULT ''"); } catch (_) {}
 
+  // Client date of birth
+  try { db.exec("ALTER TABLE clients ADD COLUMN birth_date TEXT DEFAULT ''"); } catch (_) {}
+
   // Rectifying invoices
   try { db.exec("ALTER TABLE invoices ADD COLUMN tipo_factura TEXT DEFAULT 'F1'"); } catch (_) {}
   try { db.exec("ALTER TABLE invoices ADD COLUMN factura_rectificada_id INTEGER DEFAULT NULL"); } catch (_) {}
@@ -246,19 +249,19 @@ const clients = {
   },
   create(data) {
     const stmt = db.prepare(`
-      INSERT INTO clients (name, nif, address, email, phone, notes, tags)
-      VALUES (@name, @nif, @address, @email, @phone, @notes, @tags)
+      INSERT INTO clients (name, nif, address, email, phone, notes, tags, birth_date)
+      VALUES (@name, @nif, @address, @email, @phone, @notes, @tags, @birth_date)
     `);
-    const result = stmt.run({ tags: '', ...data });
+    const result = stmt.run({ tags: '', birth_date: '', ...data });
     return { id: result.lastInsertRowid, ...data };
   },
   update(id, data) {
     const stmt = db.prepare(`
       UPDATE clients SET name=@name, nif=@nif, address=@address,
-        email=@email, phone=@phone, notes=@notes, tags=@tags
+        email=@email, phone=@phone, notes=@notes, tags=@tags, birth_date=@birth_date
       WHERE id=@id
     `);
-    stmt.run({ tags: '', ...data, id });
+    stmt.run({ tags: '', birth_date: '', ...data, id });
     return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
   },
   delete(id) {
@@ -821,7 +824,8 @@ const documents = {
   getById(id) {
     return db.prepare(`
       SELECT d.*, c.name as client_name, c.nif as client_nif,
-             c.address as client_address, c.email as client_email
+             c.address as client_address, c.email as client_email,
+             c.birth_date as client_birth_date
       FROM documents d
       LEFT JOIN clients c ON d.client_id = c.id
       WHERE d.id = ?

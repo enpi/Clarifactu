@@ -704,12 +704,16 @@ function buildDocumentTemplateInner(doc, business) {
   const businessName = (business && business.name)       ? escapeHtml(business.name)       : '';
   const extraInfo    = (business && business.extra_info) ? escapeHtml(business.extra_info) : '';
   const clientName   = doc.client_name ? escapeHtml(doc.client_name) : null;
+  const clientNif    = doc.client_nif  ? escapeHtml(doc.client_nif)  : null;
+  const clientBirth  = doc.client_birth_date
+    ? new Date(doc.client_birth_date + 'T00:00:00').toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
   const resolvedBody = resolveDocVariables(doc.body, doc);
   const bodyLines    = resolvedBody.split('\n')
     .map(l => `<p style="margin:0 0 10px 0;min-height:1em;">${escapeHtml(l) || '&nbsp;'}</p>`)
     .join('');
   const sigHtml = business && business.signature
-    ? `<img src="${business.signature}" style="max-height:56px;max-width:160px;object-fit:contain;display:block;margin-bottom:8px;" alt="Firma">`
+    ? `<img src="${business.signature}" style="max-height:56px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px auto;" alt="Firma">`
     : '';
 
   return `
@@ -728,6 +732,8 @@ function buildDocumentTemplateInner(doc, business) {
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
                     color:var(--text-secondary);margin-bottom:3px;">Dirigido a</div>
         <div style="font-size:15px;font-weight:600;color:var(--text-primary);">${clientName}</div>
+        ${clientNif   ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">DNI/NIF: ${clientNif}</div>` : ''}
+        ${clientBirth ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:1px;">Fecha de nacimiento: ${clientBirth}</div>` : ''}
       </div>
     ` : ''}
 
@@ -764,12 +770,16 @@ function buildDocumentPDFHtml(doc, business) {
   const businessName = (business && business.name)       ? escapeHtml(business.name)       : '';
   const extraInfo    = (business && business.extra_info) ? escapeHtml(business.extra_info) : '';
   const clientName   = doc.client_name ? escapeHtml(doc.client_name) : null;
+  const clientNif    = doc.client_nif  ? escapeHtml(doc.client_nif)  : null;
+  const clientBirth  = doc.client_birth_date
+    ? new Date(doc.client_birth_date + 'T00:00:00').toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
   const resolvedBody = resolveDocVariables(doc.body, doc);
   const bodyLines    = resolvedBody.split('\n')
     .map(l => `<p>${escapeHtml(l) || '&nbsp;'}</p>`)
     .join('');
   const sigHtml = business && business.signature
-    ? `<img src="${business.signature}" style="max-height:56px;max-width:160px;object-fit:contain;display:block;margin-bottom:8px;" alt="Firma">`
+    ? `<img src="${business.signature}" style="max-height:56px;max-width:160px;object-fit:contain;display:block;margin:0 auto 8px auto;" alt="Firma">`
     : '';
 
   return `<!DOCTYPE html>
@@ -803,6 +813,8 @@ function buildDocumentPDFHtml(doc, business) {
     <div style="margin-bottom:20px;">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:3px;">Dirigido a</div>
       <div style="font-size:15px;font-weight:600;color:#1e293b;">${clientName}</div>
+      ${clientNif   ? `<div style="font-size:12px;color:#64748b;margin-top:2px;">DNI/NIF: ${clientNif}</div>` : ''}
+      ${clientBirth ? `<div style="font-size:12px;color:#64748b;margin-top:1px;">Fecha de nacimiento: ${clientBirth}</div>` : ''}
     </div>
   ` : ''}
 
@@ -815,9 +827,9 @@ function buildDocumentPDFHtml(doc, business) {
   </div>
 
   <div style="border-top:1px solid #e2e8f0;padding-top:24px;display:flex;justify-content:space-between;align-items:flex-end;">
-    <div style="text-align:center;">
+    <div style="text-align:center;width:180px;">
       ${sigHtml}
-      <div style="width:180px;border-top:1px solid #94a3b8;padding-top:8px;font-size:12px;color:#64748b;">
+      <div style="border-top:1px solid #94a3b8;padding-top:8px;font-size:12px;color:#64748b;">
         <div style="font-weight:600;color:#1e293b;">${businessName}</div>
         <div>Firma</div>
       </div>
