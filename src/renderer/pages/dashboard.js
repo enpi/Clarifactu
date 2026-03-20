@@ -19,7 +19,7 @@ async function renderDashboard(container) {
 
     <div id="unpaid-warning" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;margin-bottom:16px;color:#92400e;font-size:13.5px;"></div>
 
-    <div class="stats-grid" id="stats-grid" style="grid-template-columns:repeat(5,1fr);">
+    <div class="stats-grid" id="stats-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px;">
       <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
       <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
       <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
@@ -27,86 +27,123 @@ async function renderDashboard(container) {
       <div class="stat-card skeleton-card"><div class="loading"><div class="spinner"></div></div></div>
     </div>
 
-    <div class="charts-grid">
-      <div class="card">
-        <div class="card-header"><span class="card-title">Ingresos mensuales</span></div>
-        <div class="card-body" style="padding:16px;">
-          <div class="chart-wrapper"><canvas id="bar-chart"></canvas></div>
+    <div class="dash-tabs">
+      <button class="dash-tab active" data-tab="resumen">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Resumen
+      </button>
+      <button class="dash-tab" data-tab="graficas">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Gráficas
+      </button>
+      <button class="dash-tab" data-tab="fiscal">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Fiscal
+      </button>
+    </div>
+
+    <!-- TAB: Resumen -->
+    <div class="dash-panel active" id="panel-resumen">
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Últimas facturas</span>
+            <button class="btn btn-secondary btn-sm" id="dash-view-all-btn">Ver todas</button>
+          </div>
+          <div class="table-wrapper">
+            <table class="recent-invoices-table">
+              <thead>
+                <tr>
+                  <th>Número</th>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th class="text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody id="recent-invoices-body">
+                <tr><td colspan="4"><div class="loading"><div class="spinner"></div>Cargando...</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Actividad reciente</span>
+          </div>
+          <div id="activity-log-body" style="max-height:420px;overflow-y:auto;">
+            <div class="loading"><div class="spinner"></div>Cargando...</div>
+          </div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header"><span class="card-title">Evolución acumulada</span></div>
-        <div class="card-body" style="padding:16px;">
-          <div class="chart-wrapper"><canvas id="line-chart"></canvas></div>
+    </div>
+
+    <!-- TAB: Gráficas -->
+    <div class="dash-panel" id="panel-graficas">
+      <div class="charts-grid">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Ingresos mensuales</span></div>
+          <div class="card-body" style="padding:16px;">
+            <div class="chart-wrapper"><canvas id="bar-chart"></canvas></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Evolución acumulada</span></div>
+          <div class="card-body" style="padding:16px;">
+            <div class="chart-wrapper"><canvas id="line-chart"></canvas></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="card" style="margin-bottom:20px;" id="top-clients-card">
-      <div class="card-header">
-        <span class="card-title">Top clientes</span>
-        <span id="top-clients-year-label" style="font-size:12px;color:var(--text-secondary);"></span>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <span class="card-title">Top clientes</span>
+          <span id="top-clients-year-label" style="font-size:12px;color:var(--text-secondary);"></span>
+        </div>
+        <div class="card-body" style="padding:16px;">
+          <div style="height:180px;"><canvas id="top-clients-chart"></canvas></div>
+        </div>
       </div>
-      <div class="card-body" style="padding:16px;">
-        <div style="height:180px;"><canvas id="top-clients-chart"></canvas></div>
-      </div>
-    </div>
 
-    <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;">
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Últimas facturas</span>
-          <button class="btn btn-secondary btn-sm" id="dash-view-all-btn">Ver todas</button>
+          <span class="card-title">Comparativa anual</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label style="font-size:12px;color:var(--text-secondary);">Comparar con:</label>
+            <select class="year-select" id="dash-compare-year" style="font-size:12px;padding:4px 8px;">
+              ${generateYearOptions(year - 1)}
+            </select>
+          </div>
         </div>
-        <div class="table-wrapper">
-          <table class="recent-invoices-table">
-            <thead>
-              <tr>
-                <th>Número</th>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th class="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody id="recent-invoices-body">
-              <tr><td colspan="4"><div class="loading"><div class="spinner"></div>Cargando...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Actividad reciente</span>
-        </div>
-        <div id="activity-log-body" style="max-height:340px;overflow-y:auto;">
-          <div class="loading"><div class="spinner"></div>Cargando...</div>
+        <div class="card-body" style="padding:16px;">
+          <div class="chart-wrapper"><canvas id="comparison-chart"></canvas></div>
         </div>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:20px;" id="year-comparison-card">
-      <div class="card-header">
-        <span class="card-title">Comparativa anual</span>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <label style="font-size:12px;color:var(--text-secondary);">Comparar con:</label>
-          <select class="year-select" id="dash-compare-year" style="font-size:12px;padding:4px 8px;">
-            ${generateYearOptions(year - 1)}
-          </select>
-        </div>
+    <!-- TAB: Fiscal -->
+    <div class="dash-panel" id="panel-fiscal">
+      <div id="fiscal-summary">
+        <div class="loading" style="padding:20px;"><div class="spinner"></div>Cargando resumen fiscal...</div>
       </div>
-      <div class="card-body" style="padding:16px;">
-        <div class="chart-wrapper"><canvas id="comparison-chart"></canvas></div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:20px;" id="fiscal-summary">
-      <div class="loading" style="padding:20px;"><div class="spinner"></div>Cargando resumen fiscal...</div>
     </div>
   `;
 
-  document.getElementById('dash-view-all-btn').addEventListener('click', () => {
-    navigateTo('invoices');
+  document.getElementById('dash-view-all-btn').addEventListener('click', () => navigateTo('invoices'));
+
+  // Tab switching
+  let chartsResized = false;
+  document.querySelectorAll('.dash-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.dash-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      // Resize charts when switching to graficas tab (they may have been hidden during init)
+      if (tab.dataset.tab === 'graficas' && !chartsResized) {
+        chartsResized = true;
+        [barChart, lineChart, topClientsChart, comparisonChart].forEach(c => c?.resize());
+      }
+    });
   });
 
   await loadDashboardData(year);
@@ -148,12 +185,15 @@ async function loadDashboardData(year) {
   renderFiscalSummary(fiscal, year);
   await Promise.all([loadRecentInvoices(), loadActivityLog()]);
 
-  // Wire compare-year select after rendering
-  document.getElementById('dash-compare-year')?.addEventListener('change', async (e) => {
-    const selectedYear = parseInt(document.getElementById('dash-year-select')?.value || new Date().getFullYear());
-    const cmp = await window.api.dashboard.getYearComparison(selectedYear, parseInt(e.target.value));
-    renderComparisonChart(cmp);
-  });
+  const compareSelect = document.getElementById('dash-compare-year');
+  if (compareSelect && !compareSelect.dataset.wired) {
+    compareSelect.dataset.wired = '1';
+    compareSelect.addEventListener('change', async (e) => {
+      const selectedYear = parseInt(document.getElementById('dash-year-select')?.value || new Date().getFullYear());
+      const cmp = await window.api.dashboard.getYearComparison(selectedYear, parseInt(e.target.value));
+      renderComparisonChart(cmp);
+    });
+  }
 }
 
 function renderComparisonChart(data) {
