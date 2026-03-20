@@ -551,6 +551,9 @@ navigateTo('dashboard');
   window.api.update.onDownloaded((data) => {
     showUpdateReadyBanner(data.version);
   });
+  window.api.update.onError && window.api.update.onError((data) => {
+    console.error('[update error]', data.message);
+  });
 })();
 
 function showUpdateBar(message) {

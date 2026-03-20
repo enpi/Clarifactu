@@ -6,7 +6,12 @@ const AdmZip = require('adm-zip');
 
 // ─── Auto-updater (only in packaged builds) ───────────────────────────────────
 let autoUpdater = null;
-try { ({ autoUpdater } = require('electron-updater')); } catch (_) {}
+try {
+  ({ autoUpdater } = require('electron-updater'));
+  autoUpdater.logger = console;
+  autoUpdater.autoDownload = true;
+  autoUpdater.allowPrerelease = false;
+} catch (_) {}
 
 // ─── License System ───────────────────────────────────────────────────────────
 const LICENSE_SECRET = 'clrf-license-secret-k9x2q7w4m1';

@@ -410,6 +410,20 @@ async function renderSettings(container) {
         </div>
       </div>
 
+      <!-- Update card -->
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header"><span class="card-title">Actualizaciones</span></div>
+        <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div style="font-size:13px;color:var(--text-secondary);" id="update-check-msg">
+            La aplicación busca actualizaciones automáticamente al arrancar.
+          </div>
+          <button class="btn btn-secondary" id="check-update-btn" style="flex-shrink:0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Buscar ahora
+          </button>
+        </div>
+      </div>
+
       <!-- License card -->
       <div class="card" style="margin-top:20px;">
         <div class="card-header">
@@ -548,6 +562,29 @@ async function renderSettings(container) {
     if (url) {
       const img = document.getElementById('info-app-icon');
       if (img) img.src = url;
+    }
+  });
+
+  // ── Check for updates button ──────────────────────────────────────────────
+  document.getElementById('check-update-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('check-update-btn');
+    const msg = document.getElementById('update-check-msg');
+    btn.disabled = true;
+    btn.textContent = 'Buscando...';
+    msg.textContent = 'Comprobando si hay actualizaciones disponibles...';
+    try {
+      await window.api.update.checkNow();
+      setTimeout(() => {
+        if (msg.textContent.includes('Comprobando')) {
+          msg.textContent = 'No hay actualizaciones disponibles. La app está al día.';
+        }
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Buscar ahora`;
+      }, 5000);
+    } catch (err) {
+      msg.textContent = 'Error al buscar actualizaciones: ' + err.message;
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Buscar ahora`;
     }
   });
 
