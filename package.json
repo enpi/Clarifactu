@@ -1,6 +1,6 @@
 {
   "name": "clarifactu",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "description": "Gestión de facturación para profesionales de terapia",
   "main": "main.js",
   "scripts": {
@@ -60,22 +60,33 @@
       "assets/**/*",
       "src/**/*",
       "node_modules/**/*",
+      "!node_modules/electron/**/*",
       "!node_modules/electron-builder/**/*",
-      "!node_modules/@electron/rebuild/**/*"
+      "!node_modules/@electron/rebuild/**/*",
+      "!node_modules/@playwright/**/*",
+      "!node_modules/playwright/**/*",
+      "!node_modules/playwright-core/**/*",
+      "!node_modules/jest*/**/*",
+      "!node_modules/@jest/**/*",
+      "!node_modules/@babel/**/*",
+      "!node_modules/typescript/**/*",
+      "!node_modules/app-builder-bin/**/*",
+      "!node_modules/7zip-bin/**/*",
+      "!node_modules/node-gyp/**/*",
+      "!node_modules/.cache/**/*"
     ]
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^9.4.3",
-    "chart.js": "^4.5.1",
     "electron-updater": "^6.8.3",
-    "googleapis": "^171.4.0",
     "nodemailer": "^8.0.2",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.58.2",
+    "chart.js": "^4.5.1",
     "electron": "^29.4.6",
     "electron-builder": "^24.9.1",
     "jest": "^30.3.0"
