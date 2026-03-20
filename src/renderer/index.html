@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net data:; img-src 'self' data: blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data:; img-src 'self' data: blob:;">
   <title>Clarifactu</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -173,8 +173,8 @@
     </div>
   </div>
 
-  <!-- Chart.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <!-- Chart.js local -->
+  <script src="lib/chart.umd.min.js"></script>
 
   <!-- Page Scripts -->
   <script src="pages/onboarding.js"></script>
