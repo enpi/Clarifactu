@@ -1,4 +1,4 @@
-# Clarifactu · v1.1.1
+# Clarifactu · v1.2.0
 
 Aplicación de escritorio para gestión de facturación orientada a profesionales de terapia y otros autónomos. Funciona completamente offline, sin suscripciones ni servicios en la nube.
 
@@ -69,6 +69,17 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Ordenación por fecha, número, cliente o importe
 - **Exportación a CSV** compatible con Excel (con BOM UTF-8), incluyendo todos los campos y estado de cobro
 
+### Gastos
+
+- Alta, edición y eliminación de gastos deducibles
+- **13 categorías fiscales** mapeadas a la Declaración de la Renta (E. Directa): cuotas autónomo, arrendamientos, suministros, servicios profesionales, material de oficina, formación, seguros, publicidad, reparaciones, gastos financieros, amortizaciones, tributos y otros
+- Campos por gasto: fecha, categoría, descripción, proveedor, NIF proveedor, nº factura proveedor, base imponible, IVA (0%/4%/10%/21%), % deducible y notas
+- **% Deducible**: indicador informativo detallado con los porcentajes según el LIRPF (100% para SS, mixto para suministros/arrendamiento, gastos de transporte y manutención según baremo oficial)
+- **Adjuntar factura del proveedor**: copia el PDF/JPG/PNG al directorio de datos local y permite abrirlo o eliminarlo desde la app
+- Filtros por año, categoría y trimestre
+- Badges de colores por categoría en la tabla
+- Totales (base, IVA, importe deducible) calculados en tiempo real para el filtro activo
+
 ### Dashboard
 - Resumen del año: facturado, nº facturas, clientes, servicios, documentos totales y documentos enviados este mes
 - **Aviso de facturas pendientes de cobro** con importe total
@@ -79,8 +90,11 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Selector de año para navegar el historial
 - Últimas facturas emitidas
 - **Registro de actividad reciente** (últimas 25 acciones)
-- **Resumen fiscal trimestral** (T1–T4): base imponible, IVA repercutido e IRPF retenido por trimestre — útil para el Modelo 130
-- **Exportación del resumen fiscal a CSV** (compatible con Excel, BOM UTF-8)
+- **Resumen fiscal trimestral** con tres pestañas:
+  - **Ingresos / Gastos**: base imponible, gastos deducibles, resultado neto e IVA neto por trimestre
+  - **Modelo 130**: casillas C.01 (ingresos), C.02 (gastos deducibles), C.03 (diferencia), C.04 (20% × C.03), C.05 (retenciones IRPF), C.06 (resultado a ingresar) — coloreado en verde/rojo
+  - **Modelo 303**: IVA repercutido, IVA soportado deducible y resultado a ingresar/compensar
+- **Exportación del resumen fiscal** a CSV o a **Excel con casillas por modelo** (hojas: Modelo 130, Modelo 303, Renta-Gastos por categoría)
 
 ### Búsqueda global
 - Acceso con **Ctrl+K** desde cualquier pantalla
@@ -90,7 +104,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 
 ### Atajos de teclado
 - **Ctrl+K** — búsqueda global
-- **Alt+1–6** — navegación directa a cada sección (Dashboard, Clientes, Servicios, Facturas, Documentos, Configuración)
+- **Alt+1–7** — navegación directa a cada sección (Dashboard, Clientes, Servicios, Facturas, Gastos, Documentos, Configuración)
 - **D** — ir a Documentos
 - **N** — nuevo documento (abre directamente el modal)
 - **?** — mostrar ayuda de atajos
@@ -268,6 +282,7 @@ Clarifactu/
 │           ├── services.js
 │           ├── new-invoice.js
 │           ├── invoices.js
+│           ├── expenses.js
 │           ├── documents.js
 │           ├── onboarding.js
 │           └── settings.js
@@ -299,3 +314,4 @@ Las migraciones se aplican automáticamente en cada arranque, por lo que actuali
 - Los backups son copias exactas del archivo `.db` y pueden restaurarse en cualquier instalación de Clarifactu.
 - El sistema de licencias es offline; las claves son válidas en cualquier equipo que tenga el mismo binario.
 - Las actualizaciones automáticas solo funcionan en la versión instalada (no en modo `npm run dev`).
+- Las facturas de proveedores adjuntas a gastos se almacenan en `%APPDATA%/Clarifactu/expense-docs/` y no se incluyen en los backups de base de datos; guarda copias externas si las necesitas.
