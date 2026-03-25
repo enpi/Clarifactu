@@ -338,6 +338,116 @@ ipcMain.handle('dashboard:exportFiscalPDF', async (e, year) => {
   } catch (err) { pdfWin.close(); return { success: false, reason: err.message }; }
 });
 
+// ─── Expenses ─────────────────────────────────────────────────────────────────
+ipcMain.handle('expenses:getAll', () => db.expenses.getAll());
+ipcMain.handle('expenses:getById', (e, id) => db.expenses.getById(id));
+ipcMain.handle('expenses:create', (e, data) => db.expenses.create(data));
+ipcMain.handle('expenses:update', (e, id, data) => db.expenses.update(id, data));
+ipcMain.handle('expenses:delete', (e, id) => db.expenses.delete(id));
+ipcMain.handle('expenses:getByYear', (e, year) => db.expenses.getByYear(year));
+ipcMain.handle('expenses:getSummaryByYear', (e, year) => db.expenses.getSummaryByYear(year));
+
+ipcMain.handle('expenses:selectDoc', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Seleccionar factura del proveedor',
+    properties: ['openFile'],
+    filters: [{ name: 'Documentos', extensions: ['pdf', 'jpg', 'jpeg', 'png'] }]
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  const srcPath = result.filePaths[0];
+  const ext = path.extname(srcPath);
+  const fileName = `gasto-${Date.now()}${ext}`;
+  const destDir = path.join(app.getPath('userData'), 'expense-docs');
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  fs.copyFileSync(srcPath, path.join(destDir, fileName));
+  return fileName;
+});
+
+ipcMain.handle('expenses:openDoc', (e, fileName) => {
+  shell.openPath(path.join(app.getPath('userData'), 'expense-docs', fileName));
+});
+
+ipcMain.handle('expenses:deleteDoc', (e, fileName) => {
+  try {
+    const filePath = path.join(app.getPath('userData'), 'expense-docs', fileName);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (_) {}
+  return { success: true };
+});
+
+ipcMain.handle('dashboard:exportModelos', async (e, year) => {
+  const quarters = db.dashboard.getFiscalSummary(year);
+  const expSummary = db.expenses.getSummaryByYear(year);
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const N = v => parseFloat(v || 0).toFixed(2);
+
+  // Modelo 130 sheet
+  const m130Headers = ['Trimestre','C.01 Ingresos íntegros','C.02 Gastos deducibles','C.03 Diferencia (01-02)','C.04 20% s/ C.03','C.05 Retenciones (IRPF)','C.06 Resultado (04-05)'];
+  const m130HRow = m130Headers.map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
+  const m130Rows = quarters.map(q => {
+    const c01 = q.base || 0;
+    const c02 = q.gastos_deducibles || 0;
+    const c03 = Math.max(c01 - c02, 0);
+    const c04 = c03 * 0.20;
+    const c05 = q.irpf || 0;
+    const c06 = c04 - c05;
+    return `<Row><Cell><Data ss:Type="String">${esc(q.label)}</Data></Cell>${[c01,c02,c03,c04,c05,c06].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+  }).join('');
+  const m130TotalC01 = quarters.reduce((s,q)=>s+(q.base||0),0);
+  const m130TotalC02 = quarters.reduce((s,q)=>s+(q.gastos_deducibles||0),0);
+  const m130TotalC03 = Math.max(m130TotalC01 - m130TotalC02, 0);
+  const m130TotalC04 = m130TotalC03 * 0.20;
+  const m130TotalC05 = quarters.reduce((s,q)=>s+(q.irpf||0),0);
+  const m130TotalC06 = m130TotalC04 - m130TotalC05;
+  const m130Total = `<Row><Cell><Data ss:Type="String">TOTAL ${year}</Data></Cell>${[m130TotalC01,m130TotalC02,m130TotalC03,m130TotalC04,m130TotalC05,m130TotalC06].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+
+  // Modelo 303 sheet
+  const m303Headers = ['Trimestre','IVA repercutido (facturas)','IVA soportado deducible (gastos)','Resultado IVA'];
+  const m303HRow = m303Headers.map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
+  const m303Rows = quarters.map(q => {
+    const rep = q.iva || 0;
+    const sop = q.gastos_iva || 0;
+    const res = rep - sop;
+    return `<Row><Cell><Data ss:Type="String">${esc(q.label)}</Data></Cell>${[rep,sop,res].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+  }).join('');
+  const m303TotalRep = quarters.reduce((s,q)=>s+(q.iva||0),0);
+  const m303TotalSop = quarters.reduce((s,q)=>s+(q.gastos_iva||0),0);
+  const m303Total = `<Row><Cell><Data ss:Type="String">TOTAL ${year}</Data></Cell>${[m303TotalRep,m303TotalSop,m303TotalRep-m303TotalSop].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+
+  // Renta (gastos por categoría) sheet
+  const rentaHeaders = ['Categoría (Renta)','Clave','Nº gastos','Base imponible','IVA soportado','Importe deducible'];
+  const rentaHRow = rentaHeaders.map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
+  const CATEGORY_LABELS = {
+    ARRENDAMIENTOS:'Arrendamientos y cánones', SUMINISTROS:'Suministros',
+    MATERIAL_OFICINA:'Consumos de explotación', SERVICIOS_PROF:'Servicios de profesionales independientes',
+    SEGUROS:'Otros servicios exteriores (Seguros)', PUBLICIDAD:'Publicidad y relaciones públicas',
+    FORMACION:'Otros gastos deducibles (Formación)', SEG_SOCIAL:'Seguridad Social a cargo del empresario',
+    REPARACIONES:'Reparaciones y conservación', GASTOS_FINANCIEROS:'Gastos financieros',
+    AMORTIZACIONES:'Amortizaciones', TRIBUTOS:'Tributos fiscalmente deducibles', OTROS:'Otros gastos deducibles'
+  };
+  const rentaRows = expSummary.map(r => {
+    const label = CATEGORY_LABELS[r.category] || r.category;
+    return `<Row><Cell><Data ss:Type="String">${esc(label)}</Data></Cell><Cell><Data ss:Type="String">${esc(r.category)}</Data></Cell><Cell><Data ss:Type="Number">${r.count}</Data></Cell>${[r.total_base,r.total_iva,r.total_deducible].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+  }).join('');
+  const rentaTotalBase = expSummary.reduce((s,r)=>s+(r.total_base||0),0);
+  const rentaTotalIva = expSummary.reduce((s,r)=>s+(r.total_iva||0),0);
+  const rentaTotalDed = expSummary.reduce((s,r)=>s+(r.total_deducible||0),0);
+  const rentaTotal = `<Row><Cell><Data ss:Type="String">TOTAL</Data></Cell><Cell><Data ss:Type="String"></Data></Cell><Cell><Data ss:Type="Number">${expSummary.reduce((s,r)=>s+r.count,0)}</Data></Cell>${[rentaTotalBase,rentaTotalIva,rentaTotalDed].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+
+  const styles = `<Styles><Style ss:ID="header"><Font ss:Bold="1"/><Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/></Style></Styles>`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">${styles}<Worksheet ss:Name="Modelo 130"><Table><Row>${m130HRow}</Row>${m130Rows}${m130Total}</Table></Worksheet><Worksheet ss:Name="Modelo 303"><Table><Row>${m303HRow}</Row>${m303Rows}${m303Total}</Table></Worksheet><Worksheet ss:Name="Renta - Gastos por categoría"><Table><Row>${rentaHRow}</Row>${rentaRows}${rentaTotal}</Table></Worksheet></Workbook>`;
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar modelos fiscales',
+    defaultPath: `modelos-fiscales-${year}.xls`,
+    filters: [{ name: 'Excel', extensions: ['xls'] }]
+  });
+  if (result.canceled) return { success: false };
+  fs.writeFileSync(result.filePath, xml, 'utf8');
+  shell.showItemInFolder(result.filePath);
+  return { success: true };
+});
+
 // Activity Log
 ipcMain.handle('activityLog:add', (e, data) => { db.activityLog.add(data); return { success: true }; });
 ipcMain.handle('activityLog:getRecent', (e, limit) => db.activityLog.getRecent(limit));

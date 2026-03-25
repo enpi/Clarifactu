@@ -202,6 +202,28 @@ function runMigrations() {
       FOREIGN KEY(client_id) REFERENCES clients(id)
     );
   `);
+
+  // Expenses
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      provider TEXT DEFAULT '',
+      provider_nif TEXT DEFAULT '',
+      invoice_number TEXT DEFAULT '',
+      amount REAL NOT NULL,
+      iva_rate REAL DEFAULT 0,
+      iva_amount REAL DEFAULT 0,
+      total REAL NOT NULL,
+      deductible_pct REAL DEFAULT 100,
+      deductible_amount REAL NOT NULL,
+      pdf_file TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
 }
 
 function seedDefaults() {
@@ -682,7 +704,7 @@ const dashboard = {
       { label: 'T4', start: '10', end: '12' },
     ];
     return quarters.map(q => {
-      const row = db.prepare(`
+      const inv = db.prepare(`
         SELECT
           COALESCE(SUM(subtotal), 0) as base,
           COALESCE(SUM(tax_amount), 0) as iva,
@@ -692,7 +714,16 @@ const dashboard = {
         WHERE strftime('%Y', date) = ?
           AND strftime('%m', date) >= ? AND strftime('%m', date) <= ?
       `).get(String(year), q.start, q.end);
-      return { label: q.label, ...row };
+      const exp = db.prepare(`
+        SELECT
+          COALESCE(SUM(amount), 0) as gastos_base,
+          COALESCE(SUM(iva_amount), 0) as gastos_iva,
+          COALESCE(SUM(deductible_amount), 0) as gastos_deducibles
+        FROM expenses
+        WHERE strftime('%Y', date) = ?
+          AND strftime('%m', date) >= ? AND strftime('%m', date) <= ?
+      `).get(String(year), q.start, q.end);
+      return { label: q.label, ...inv, ...exp };
     });
   }
 };
@@ -872,6 +903,78 @@ const documents = {
   }
 };
 
+// ─── Expenses ─────────────────────────────────────────────────────────────────
+
+const expenses = {
+  getAll() {
+    return db.prepare('SELECT * FROM expenses ORDER BY date DESC, id DESC').all();
+  },
+  getById(id) {
+    return db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+  },
+  create(data) {
+    const amount = data.amount || 0;
+    const iva_amount = amount * (data.iva_rate || 0) / 100;
+    const deductible_pct = data.deductible_pct !== undefined ? data.deductible_pct : 100;
+    const deductible_amount = amount * deductible_pct / 100;
+    const total = amount + iva_amount;
+    const stmt = db.prepare(`
+      INSERT INTO expenses (date, description, category, provider, provider_nif, invoice_number,
+        amount, iva_rate, iva_amount, total, deductible_pct, deductible_amount, pdf_file, notes)
+      VALUES (@date, @description, @category, @provider, @provider_nif, @invoice_number,
+        @amount, @iva_rate, @iva_amount, @total, @deductible_pct, @deductible_amount, @pdf_file, @notes)
+    `);
+    const result = stmt.run({
+      provider: '', provider_nif: '', invoice_number: '', pdf_file: '', notes: '',
+      ...data, iva_amount, deductible_amount, deductible_pct, total
+    });
+    return db.prepare('SELECT * FROM expenses WHERE id = ?').get(result.lastInsertRowid);
+  },
+  update(id, data) {
+    const amount = data.amount || 0;
+    const iva_amount = amount * (data.iva_rate || 0) / 100;
+    const deductible_pct = data.deductible_pct !== undefined ? data.deductible_pct : 100;
+    const deductible_amount = amount * deductible_pct / 100;
+    const total = amount + iva_amount;
+    db.prepare(`
+      UPDATE expenses SET date=@date, description=@description, category=@category,
+        provider=@provider, provider_nif=@provider_nif, invoice_number=@invoice_number,
+        amount=@amount, iva_rate=@iva_rate, iva_amount=@iva_amount, total=@total,
+        deductible_pct=@deductible_pct, deductible_amount=@deductible_amount,
+        pdf_file=@pdf_file, notes=@notes
+      WHERE id=@id
+    `).run({
+      provider: '', provider_nif: '', invoice_number: '', pdf_file: '', notes: '',
+      ...data, iva_amount, deductible_amount, deductible_pct, total, id
+    });
+    return db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+  },
+  delete(id) {
+    db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    return { success: true };
+  },
+  getByYear(year) {
+    return db.prepare(`
+      SELECT * FROM expenses
+      WHERE strftime('%Y', date) = ?
+      ORDER BY date DESC, id DESC
+    `).all(String(year));
+  },
+  getSummaryByYear(year) {
+    return db.prepare(`
+      SELECT category,
+        COALESCE(SUM(amount), 0) as total_base,
+        COALESCE(SUM(iva_amount), 0) as total_iva,
+        COALESCE(SUM(deductible_amount), 0) as total_deducible,
+        COUNT(*) as count
+      FROM expenses
+      WHERE strftime('%Y', date) = ?
+      GROUP BY category
+      ORDER BY total_deducible DESC
+    `).all(String(year));
+  }
+};
+
 // ─── Invoice: markEmailSent ────────────────────────────────────────────────────
 
 invoices.markEmailSent = function(id) {
@@ -898,5 +1001,6 @@ module.exports = {
   emailSettings,
   activityLog,
   documents,
-  documentTemplates
+  documentTemplates,
+  expenses
 };

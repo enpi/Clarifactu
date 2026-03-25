@@ -5,6 +5,7 @@ const pages = {
   services: renderServices,
   'new-invoice': renderNewInvoice,
   invoices: renderInvoices,
+  expenses: renderExpenses,
   documents: renderDocuments,
   settings: renderSettings
 };

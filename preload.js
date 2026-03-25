@@ -84,6 +84,20 @@ contextBridge.exposeInMainWorld('api', {
   selectLogo: () => ipcRenderer.invoke('selectLogo'),
   selectSignature: () => ipcRenderer.invoke('selectSignature'),
 
+  // ── Expenses ──────────────────────────────────────────────────────────────
+  expenses: {
+    getAll: () => ipcRenderer.invoke('expenses:getAll'),
+    getById: (id) => ipcRenderer.invoke('expenses:getById', id),
+    create: (data) => ipcRenderer.invoke('expenses:create', data),
+    update: (id, data) => ipcRenderer.invoke('expenses:update', id, data),
+    delete: (id) => ipcRenderer.invoke('expenses:delete', id),
+    getByYear: (year) => ipcRenderer.invoke('expenses:getByYear', year),
+    getSummaryByYear: (year) => ipcRenderer.invoke('expenses:getSummaryByYear', year),
+    selectDoc: () => ipcRenderer.invoke('expenses:selectDoc'),
+    openDoc: (fileName) => ipcRenderer.invoke('expenses:openDoc', fileName),
+    deleteDoc: (fileName) => ipcRenderer.invoke('expenses:deleteDoc', fileName),
+  },
+
   // ── Dashboard ─────────────────────────────────────────────────────────────
   dashboard: {
     getStats: () => ipcRenderer.invoke('dashboard:getStats'),
@@ -93,7 +107,8 @@ contextBridge.exposeInMainWorld('api', {
     getDocumentStats: () => ipcRenderer.invoke('dashboard:getDocumentStats'),
     getYearComparison: (year1, year2) => ipcRenderer.invoke('dashboard:getYearComparison', year1, year2),
     exportFiscalExcel: (year) => ipcRenderer.invoke('dashboard:exportFiscalExcel', year),
-    exportFiscalPDF: (year) => ipcRenderer.invoke('dashboard:exportFiscalPDF', year)
+    exportFiscalPDF: (year) => ipcRenderer.invoke('dashboard:exportFiscalPDF', year),
+    exportModelos: (year) => ipcRenderer.invoke('dashboard:exportModelos', year),
   },
 
   // ── Document Templates ────────────────────────────────────────────────────

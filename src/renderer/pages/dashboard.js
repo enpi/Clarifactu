@@ -264,74 +264,225 @@ function renderUnpaidWarning(stats) {
 function renderFiscalSummary(quarters, year) {
   const el = document.getElementById('fiscal-summary');
   if (!el) return;
-  const totalBase = quarters.reduce((s, q) => s + q.base, 0);
-  const totalIva = quarters.reduce((s, q) => s + q.iva, 0);
-  const totalIrpf = quarters.reduce((s, q) => s + q.irpf, 0);
-  const hasData = totalBase > 0;
+
+  const th = (txt, align = 'right') => `<th style="padding:8px 12px;text-align:${align};font-weight:600;color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">${txt}</th>`;
+  const td = (content, align = 'right', extra = '') => `<td style="padding:9px 12px;text-align:${align};${extra}">${content}</td>`;
+  const fc = formatCurrency;
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+
+  // Pre-compute Modelo 130 casillas per quarter
+  const m130 = quarters.map(q => {
+    const c01 = q.base || 0;
+    const c02 = q.gastos_deducibles || 0;
+    const c03 = Math.max(c01 - c02, 0);
+    const c04 = c03 * 0.20;
+    const c05 = q.irpf || 0;
+    const c06 = c04 - c05;
+    return { ...q, c01, c02, c03, c04, c05, c06 };
+  });
+
+  const totalBase = quarters.reduce((s, q) => s + (q.base || 0), 0);
+  const totalIva  = quarters.reduce((s, q) => s + (q.iva || 0), 0);
+  const totalIrpf = quarters.reduce((s, q) => s + (q.irpf || 0), 0);
+  const totalGastos = quarters.reduce((s, q) => s + (q.gastos_deducibles || 0), 0);
+  const totalGastosIva = quarters.reduce((s, q) => s + (q.gastos_iva || 0), 0);
+
+  const totalC03 = Math.max(totalBase - totalGastos, 0);
+  const totalC04 = totalC03 * 0.20;
+  const totalC06 = totalC04 - totalIrpf;
+
+  const exportMenuItems = `
+    <button onclick="exportFiscalCSV(${year});document.getElementById('fiscal-export-menu').style.display='none';" class="fiscal-export-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      CSV (ingresos)
+    </button>
+    <button onclick="exportFiscalPDF(${year});document.getElementById('fiscal-export-menu').style.display='none';" class="fiscal-export-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      PDF (ingresos)
+    </button>
+    <div style="border-top:1px solid var(--border);margin:4px 0;"></div>
+    <button onclick="exportModelos(${year});document.getElementById('fiscal-export-menu').style.display='none';" class="fiscal-export-item" style="color:#059669;font-weight:600;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+      Modelos fiscales (Excel)
+    </button>
+  `;
 
   el.innerHTML = `
     <div class="card-header">
       <span class="card-title">Resumen fiscal ${year}</span>
       <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-size:12px;color:var(--text-secondary);">Modelo 130 / IVA trimestral</span>
+        <span style="font-size:12px;color:var(--text-secondary);">M-130 · M-303 · Renta</span>
         <div style="position:relative;" id="fiscal-export-wrapper">
           <button class="btn btn-secondary btn-sm" id="fiscal-export-toggle" style="display:flex;align-items:center;gap:5px;">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Exportar
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div id="fiscal-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:200;min-width:140px;overflow:hidden;">
-            <button onclick="exportFiscalCSV(${year});document.getElementById('fiscal-export-menu').style.display='none';" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              CSV
-            </button>
-            <button onclick="exportFiscalExcel(${year});document.getElementById('fiscal-export-menu').style.display='none';" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
-              Excel
-            </button>
-            <button onclick="exportFiscalPDF(${year});document.getElementById('fiscal-export-menu').style.display='none';" style="display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-primary);text-align:left;" onmouseover="this.style.background='var(--content-bg)'" onmouseout="this.style.background='none'">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              PDF
-            </button>
+          <div id="fiscal-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:200;min-width:200px;overflow:hidden;padding:4px 0;">
+            ${exportMenuItems}
           </div>
         </div>
       </div>
     </div>
-    <div class="card-body" style="padding:0;">
+
+    <!-- Sub-tabs -->
+    <div style="border-bottom:1px solid var(--border);display:flex;gap:0;">
+      <button class="fiscal-subtab active" data-ftab="overview" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Ingresos / Gastos</button>
+      <button class="fiscal-subtab" data-ftab="m130" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 130</button>
+      <button class="fiscal-subtab" data-ftab="m303" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 303</button>
+    </div>
+
+    <!-- TAB: Ingresos / Gastos -->
+    <div class="fiscal-fpanel active" id="ftab-overview" style="padding:0;">
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
           <tr style="background:var(--bg-secondary);">
-            <th style="padding:8px 16px;text-align:left;font-weight:600;color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Trimestre</th>
-            <th style="padding:8px 12px;text-align:right;font-weight:600;color:var(--text-secondary);font-size:11px;">Facturas</th>
-            <th style="padding:8px 12px;text-align:right;font-weight:600;color:var(--text-secondary);font-size:11px;">Base imponible</th>
-            <th style="padding:8px 12px;text-align:right;font-weight:600;color:var(--text-secondary);font-size:11px;">IVA repercutido</th>
-            <th style="padding:8px 16px;text-align:right;font-weight:600;color:var(--text-secondary);font-size:11px;">IRPF retenido</th>
+            ${th('Trimestre','left')}
+            ${th('Facturas')}
+            ${th('Ingresos (base)')}
+            ${th('Gastos deducibles')}
+            ${th('Resultado neto')}
+            ${th('IVA repercutido')}
+            ${th('IVA soportado')}
+            ${th('IRPF retenido')}
           </tr>
         </thead>
         <tbody>
-          ${quarters.map(q => `
+          ${quarters.map(q => {
+            const resultado = (q.base || 0) - (q.gastos_deducibles || 0);
+            return `<tr style="border-top:1px solid var(--border);">
+              <td style="padding:9px 12px 9px 16px;font-weight:600;">${q.label}</td>
+              ${td(q.count, 'right', 'color:var(--text-secondary);')}
+              ${td(fc(q.base || 0))}
+              ${td(q.gastos_deducibles > 0 ? `<span style="color:#dc2626;">−${fc(q.gastos_deducibles)}</span>` : dash)}
+              ${td(`<span style="font-weight:600;color:${resultado >= 0 ? '#059669' : '#dc2626'};">${fc(resultado)}</span>`)}
+              ${td(q.iva > 0 ? `<span style="color:#2563eb;">${fc(q.iva)}</span>` : dash)}
+              ${td(q.gastos_iva > 0 ? `<span style="color:#dc2626;">−${fc(q.gastos_iva)}</span>` : dash)}
+              ${td(q.irpf > 0 ? `<span style="color:#7c3aed;">${fc(q.irpf)}</span>` : dash, 'right', 'padding-right:16px;')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--border);background:var(--bg-secondary);">
+            <td style="padding:9px 12px 9px 16px;font-weight:700;">Total ${year}</td>
+            ${td(quarters.reduce((s,q)=>s+q.count,0), 'right', 'font-weight:600;color:var(--text-secondary);')}
+            ${td(`<span style="font-weight:700;">${fc(totalBase)}</span>`)}
+            ${td(totalGastos > 0 ? `<span style="font-weight:700;color:#dc2626;">−${fc(totalGastos)}</span>` : dash)}
+            ${td(`<span style="font-weight:700;color:${(totalBase-totalGastos)>=0?'#059669':'#dc2626'};">${fc(totalBase-totalGastos)}</span>`)}
+            ${td(`<span style="font-weight:700;color:#2563eb;">${fc(totalIva)}</span>`)}
+            ${td(totalGastosIva > 0 ? `<span style="font-weight:700;color:#dc2626;">−${fc(totalGastosIva)}</span>` : dash)}
+            ${td(`<span style="font-weight:700;color:#7c3aed;">${totalIrpf > 0 ? fc(totalIrpf) : '—'}</span>`, 'right', 'padding-right:16px;')}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- TAB: Modelo 130 -->
+    <div class="fiscal-fpanel" id="ftab-m130" style="padding:0;display:none;">
+      <div style="padding:12px 16px 8px;font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-bottom:1px solid var(--border);">
+        Estimación Directa — Pagos fraccionados IRPF (trimestral). Casilla 06 negativa se acumula al siguiente trimestre.
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-secondary);">
+            ${th('','left')}
+            ${th('C.01 Ingresos')}
+            ${th('C.02 Gastos')}
+            ${th('C.03 Diferencia')}
+            ${th('C.04 (20% × C.03)')}
+            ${th('C.05 Retenciones')}
+            ${th('C.06 Resultado')}
+          </tr>
+        </thead>
+        <tbody>
+          ${m130.map(q => `
             <tr style="border-top:1px solid var(--border);">
-              <td style="padding:10px 16px;font-weight:600;">${q.label}</td>
-              <td style="padding:10px 12px;text-align:right;color:var(--text-secondary);">${q.count}</td>
-              <td style="padding:10px 12px;text-align:right;">${formatCurrency(q.base)}</td>
-              <td style="padding:10px 12px;text-align:right;color:#2563eb;">${formatCurrency(q.iva)}</td>
-              <td style="padding:10px 16px;text-align:right;color:#dc2626;">${q.irpf > 0 ? formatCurrency(q.irpf) : '<span style="color:var(--text-secondary)">-</span>'}</td>
+              <td style="padding:9px 12px 9px 16px;font-weight:600;">${q.label}</td>
+              ${td(fc(q.c01))}
+              ${td(q.c02 > 0 ? `<span style="color:#dc2626;">${fc(q.c02)}</span>` : dash)}
+              ${td(fc(q.c03))}
+              ${td(fc(q.c04))}
+              ${td(q.c05 > 0 ? `<span style="color:#7c3aed;">${fc(q.c05)}</span>` : dash)}
+              ${td(`<span style="font-weight:600;color:${q.c06 > 0 ? '#dc2626' : q.c06 < 0 ? '#059669' : 'var(--text-secondary)'};">${fc(q.c06)}</span>`, 'right', 'padding-right:16px;')}
             </tr>
           `).join('')}
         </tbody>
         <tfoot>
           <tr style="border-top:2px solid var(--border);background:var(--bg-secondary);">
-            <td style="padding:10px 16px;font-weight:700;">Total ${year}</td>
-            <td style="padding:10px 12px;text-align:right;font-weight:600;">${quarters.reduce((s,q)=>s+q.count,0)}</td>
-            <td style="padding:10px 12px;text-align:right;font-weight:700;">${formatCurrency(totalBase)}</td>
-            <td style="padding:10px 12px;text-align:right;font-weight:700;color:#2563eb;">${formatCurrency(totalIva)}</td>
-            <td style="padding:10px 16px;text-align:right;font-weight:700;color:#dc2626;">${totalIrpf > 0 ? formatCurrency(totalIrpf) : '<span style="color:var(--text-secondary)">-</span>'}</td>
+            <td style="padding:9px 12px 9px 16px;font-weight:700;">Total ${year}</td>
+            ${td(`<span style="font-weight:700;">${fc(totalBase)}</span>`)}
+            ${td(totalGastos > 0 ? `<span style="font-weight:700;color:#dc2626;">${fc(totalGastos)}</span>` : dash)}
+            ${td(`<span style="font-weight:700;">${fc(totalC03)}</span>`)}
+            ${td(`<span style="font-weight:700;">${fc(totalC04)}</span>`)}
+            ${td(totalIrpf > 0 ? `<span style="font-weight:700;color:#7c3aed;">${fc(totalIrpf)}</span>` : dash)}
+            ${td(`<span style="font-weight:700;color:${totalC06>0?'#dc2626':totalC06<0?'#059669':'var(--text-secondary)'};">${fc(totalC06)}</span>`, 'right', 'padding-right:16px;')}
           </tr>
         </tfoot>
       </table>
-      ${!hasData ? `<p style="text-align:center;color:var(--text-secondary);font-size:13px;padding:16px;">Sin facturas en ${year}</p>` : ''}
+      <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);">
+        C.06 &gt; 0 = importe a ingresar en Hacienda · C.06 &lt; 0 = retenciones superiores al pago, resultado 0 en el modelo
+      </div>
+    </div>
+
+    <!-- TAB: Modelo 303 -->
+    <div class="fiscal-fpanel" id="ftab-m303" style="padding:0;display:none;">
+      <div style="padding:12px 16px 8px;font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-bottom:1px solid var(--border);">
+        Liquidación IVA trimestral. IVA soportado corresponde al IVA de los gastos registrados.
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-secondary);">
+            ${th('','left')}
+            ${th('IVA repercutido (facturas)')}
+            ${th('IVA soportado deducible (gastos)')}
+            ${th('Resultado IVA')}
+          </tr>
+        </thead>
+        <tbody>
+          ${quarters.map(q => {
+            const res = (q.iva || 0) - (q.gastos_iva || 0);
+            return `<tr style="border-top:1px solid var(--border);">
+              <td style="padding:9px 12px 9px 16px;font-weight:600;">${q.label}</td>
+              ${td(q.iva > 0 ? `<span style="color:#2563eb;">${fc(q.iva)}</span>` : dash)}
+              ${td(q.gastos_iva > 0 ? `<span style="color:#dc2626;">${fc(q.gastos_iva)}</span>` : dash)}
+              ${td(`<span style="font-weight:600;color:${res>0?'#dc2626':res<0?'#059669':'var(--text-secondary)'};">${fc(res)}</span>`, 'right', 'padding-right:16px;')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--border);background:var(--bg-secondary);">
+            <td style="padding:9px 12px 9px 16px;font-weight:700;">Total ${year}</td>
+            ${td(`<span style="font-weight:700;color:#2563eb;">${fc(totalIva)}</span>`)}
+            ${td(totalGastosIva > 0 ? `<span style="font-weight:700;color:#dc2626;">${fc(totalGastosIva)}</span>` : dash)}
+            ${td(`<span style="font-weight:700;color:${(totalIva-totalGastosIva)>0?'#dc2626':(totalIva-totalGastosIva)<0?'#059669':'var(--text-secondary)'};">${fc(totalIva-totalGastosIva)}</span>`, 'right', 'padding-right:16px;')}
+          </tr>
+        </tfoot>
+      </table>
+      <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);">
+        Resultado &gt; 0 = a ingresar · Resultado &lt; 0 = a compensar en siguiente trimestre o solicitar devolución
+      </div>
     </div>
   `;
+
+  // Sub-tab switching
+  el.querySelectorAll('.fiscal-subtab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      el.querySelectorAll('.fiscal-subtab').forEach(t => {
+        t.style.borderBottomColor = 'transparent';
+        t.style.color = 'var(--text-secondary)';
+        t.classList.remove('active');
+      });
+      el.querySelectorAll('.fiscal-fpanel').forEach(p => p.style.display = 'none');
+      tab.style.borderBottomColor = 'var(--accent, #2563eb)';
+      tab.style.color = 'var(--text-primary)';
+      tab.classList.add('active');
+      const panel = document.getElementById('ftab-' + tab.dataset.ftab);
+      if (panel) panel.style.display = '';
+    });
+  });
+  // Apply active style to first tab
+  const firstTab = el.querySelector('.fiscal-subtab.active');
+  if (firstTab) { firstTab.style.borderBottomColor = 'var(--accent, #2563eb)'; firstTab.style.color = 'var(--text-primary)'; }
 
   // Dropdown toggle
   const toggle = document.getElementById('fiscal-export-toggle');
@@ -348,6 +499,12 @@ function renderFiscalSummary(quarters, year) {
 async function exportFiscalExcel(year) {
   const result = await window.api.dashboard.exportFiscalExcel(year);
   if (result.success) showToast('Excel exportado correctamente', 'success');
+}
+
+async function exportModelos(year) {
+  const result = await window.api.dashboard.exportModelos(year);
+  if (result && result.success) showToast('Modelos fiscales exportados correctamente', 'success');
+  else if (result && !result.success) showToast('Exportación cancelada', 'info');
 }
 
 async function exportFiscalPDF(year) {
