@@ -168,13 +168,14 @@ let comparisonChart = null;
 
 async function loadDashboardData(year) {
   const compareYear = parseInt(document.getElementById('dash-compare-year')?.value || year - 1);
-  const [stats, monthly, fiscal, topClients, docStats, comparison] = await Promise.all([
+  const [stats, monthly, fiscal, topClients, docStats, comparison, expSummary] = await Promise.all([
     window.api.dashboard.getStats(),
     window.api.dashboard.getMonthlyData(year),
     window.api.dashboard.getFiscalSummary(year),
     window.api.dashboard.getTopClients(year),
     window.api.dashboard.getDocumentStats(),
-    window.api.dashboard.getYearComparison(year, compareYear)
+    window.api.dashboard.getYearComparison(year, compareYear),
+    window.api.expenses.getSummaryByYear(year)
   ]);
 
   renderStats(stats, docStats);
@@ -182,7 +183,7 @@ async function loadDashboardData(year) {
   renderCharts(monthly, year);
   renderTopClients(topClients, year);
   renderComparisonChart(comparison);
-  renderFiscalSummary(fiscal, year);
+  renderFiscalSummary(fiscal, year, expSummary);
   await Promise.all([loadRecentInvoices(), loadActivityLog()]);
 
   const compareSelect = document.getElementById('dash-compare-year');
@@ -261,7 +262,110 @@ function renderUnpaidWarning(stats) {
   `;
 }
 
-function renderFiscalSummary(quarters, year) {
+const M100_CASILLAS = {
+  '0104': 'Consumos de explotación',
+  '0107': 'Cotizaciones Seg. Social titular',
+  '0108': 'Arrendamientos y cánones',
+  '0109': 'Reparaciones y conservación',
+  '0110': 'Servicios de profesionales independientes',
+  '0111': 'Otros servicios exteriores',
+  '0112': 'Tributos fiscalmente deducibles',
+  '0113': 'Gastos financieros',
+  '0114': 'Amortizaciones',
+  '0116': 'Otros gastos fiscalmente deducibles',
+  '0625': 'Primas de seguros',
+};
+
+const CAT_TO_M100 = {
+  MATERIAL_OFICINA:   '0104',
+  SEG_SOCIAL:         '0107',
+  ARRENDAMIENTOS:     '0108',
+  REPARACIONES:       '0109',
+  SERVICIOS_PROF:     '0110',
+  SUMINISTROS:        '0111',
+  PUBLICIDAD:         '0111',
+  SEGUROS:            '0625',
+  TRIBUTOS:           '0112',
+  GASTOS_FINANCIEROS: '0113',
+  AMORTIZACIONES:     '0114',
+  FORMACION:          '0116',
+  OTROS:              '0116',
+};
+
+function renderM100Panel(expSummary, year) {
+  if (!expSummary || !expSummary.length) {
+    return `<div style="padding:32px;text-align:center;color:var(--text-secondary);font-size:13px;">Sin gastos registrados en ${year}</div>`;
+  }
+
+  const fc = formatCurrency;
+  const dash = `<span style="color:var(--text-secondary)">—</span>`;
+
+  // Group by M-100 casilla
+  const byC = {};
+  for (const row of expSummary) {
+    const c = CAT_TO_M100[row.category] || '0116';
+    if (!byC[c]) byC[c] = { count: 0, total_base: 0, total_iva: 0, total_deducible: 0 };
+    byC[c].count        += row.count        || 0;
+    byC[c].total_base   += row.total_base   || 0;
+    byC[c].total_iva    += row.total_iva    || 0;
+    byC[c].total_deducible += row.total_deducible || 0;
+  }
+
+  const th = (txt, align = 'right') => `<th style="padding:8px 12px;text-align:${align};font-weight:600;color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">${txt}</th>`;
+  const td = (content, align = 'right', extra = '') => `<td style="padding:9px 12px;text-align:${align};${extra}">${content}</td>`;
+
+  const rows = Object.entries(byC)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([casilla, d]) => `
+      <tr style="border-top:1px solid var(--border);">
+        <td style="padding:9px 12px 9px 16px;">
+          <span style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-right:8px;">${casilla}</span>
+          <span style="font-weight:500;">${M100_CASILLAS[casilla] || 'Otros gastos'}</span>
+        </td>
+        ${td(d.count, 'right', 'color:var(--text-secondary);')}
+        ${td(fc(d.total_base))}
+        ${td(d.total_iva > 0 ? `<span style="color:#2563eb;">${fc(d.total_iva)}</span>` : dash)}
+        ${td(`<span style="font-weight:600;color:#059669;">${fc(d.total_deducible)}</span>`, 'right', 'padding-right:16px;')}
+      </tr>
+    `).join('');
+
+  const totBase = expSummary.reduce((s, r) => s + (r.total_base || 0), 0);
+  const totIva  = expSummary.reduce((s, r) => s + (r.total_iva || 0), 0);
+  const totDed  = expSummary.reduce((s, r) => s + (r.total_deducible || 0), 0);
+  const totCnt  = expSummary.reduce((s, r) => s + (r.count || 0), 0);
+
+  return `
+    <div style="padding:12px 16px 8px;font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-bottom:1px solid var(--border);">
+      Gastos deducibles agrupados por casilla del Modelo 100 (Declaración de la Renta) · Estimación Directa · Año ${year}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:var(--bg-secondary);">
+          ${th('Casilla M-100 · Concepto', 'left')}
+          ${th('Nº gastos')}
+          ${th('Base imponible')}
+          ${th('IVA soportado')}
+          ${th('Importe deducible')}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border);background:var(--bg-secondary);">
+          <td style="padding:9px 12px 9px 16px;font-weight:700;">Total ${year}</td>
+          ${td(`<span style="font-weight:600;color:var(--text-secondary);">${totCnt}</span>`)}
+          ${td(`<span style="font-weight:700;">${fc(totBase)}</span>`)}
+          ${td(totIva > 0 ? `<span style="font-weight:700;color:#2563eb;">${fc(totIva)}</span>` : dash)}
+          ${td(`<span style="font-weight:700;color:#059669;">${fc(totDed)}</span>`, 'right', 'padding-right:16px;')}
+        </tr>
+      </tfoot>
+    </table>
+    <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);">
+      Las casillas corresponden a la sección de Rendimientos de actividades económicas (Estimación Directa) del Modelo 100 · Los importes deducibles reflejan el % deducible configurado por gasto · <strong>0625</strong> = cuenta PGC 625 "Primas de seguros" (casilla con numeración variable según el ejercicio fiscal)
+    </div>
+  `;
+}
+
+function renderFiscalSummary(quarters, year, expSummary = []) {
   const el = document.getElementById('fiscal-summary');
   if (!el) return;
 
@@ -330,6 +434,7 @@ function renderFiscalSummary(quarters, year) {
       <button class="fiscal-subtab active" data-ftab="overview" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Ingresos / Gastos</button>
       <button class="fiscal-subtab" data-ftab="m130" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 130</button>
       <button class="fiscal-subtab" data-ftab="m303" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 303</button>
+      <button class="fiscal-subtab" data-ftab="m100" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 100 / Renta</button>
     </div>
 
     <!-- TAB: Ingresos / Gastos -->
@@ -461,6 +566,11 @@ function renderFiscalSummary(quarters, year) {
       <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);">
         Resultado &gt; 0 = a ingresar · Resultado &lt; 0 = a compensar en siguiente trimestre o solicitar devolución
       </div>
+    </div>
+
+    <!-- TAB: Modelo 100 / Renta -->
+    <div class="fiscal-fpanel" id="ftab-m100" style="padding:0;display:none;">
+      ${renderM100Panel(expSummary, year)}
     </div>
   `;
 

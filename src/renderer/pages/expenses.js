@@ -1,20 +1,44 @@
 // ─── Expenses Page ─────────────────────────────────────────────────────────────
 
 const EXPENSE_CATEGORIES = {
-  SEG_SOCIAL:        { label: 'Seguridad Social',        desc: 'Cuotas autónomo',                               color: '#dc2626', bg: '#fee2e2', rentaLabel: 'Seguridad Social a cargo del empresario' },
-  ARRENDAMIENTOS:    { label: 'Arrendamientos',          desc: 'Local, despacho, alquiler de espacio',          color: '#7c3aed', bg: '#ede9fe', rentaLabel: 'Arrendamientos y cánones' },
-  SUMINISTROS:       { label: 'Suministros',             desc: 'Luz, agua, internet, teléfono',                 color: '#2563eb', bg: '#dbeafe', rentaLabel: 'Suministros' },
-  SERVICIOS_PROF:    { label: 'Servicios profesionales', desc: 'Gestoría, abogados, consultores',               color: '#0891b2', bg: '#e0f2fe', rentaLabel: 'Servicios de profesionales independientes' },
-  MATERIAL_OFICINA:  { label: 'Material de oficina',     desc: 'Papelería, material de trabajo',                color: '#059669', bg: '#dcfce7', rentaLabel: 'Consumos de explotación' },
-  FORMACION:         { label: 'Formación',               desc: 'Cursos, libros, revistas profesionales',        color: '#65a30d', bg: '#f0fdf4', rentaLabel: 'Otros gastos deducibles (Formación)' },
-  SEGUROS:           { label: 'Seguros',                 desc: 'RC, local, equipos profesionales',              color: '#d97706', bg: '#fef3c7', rentaLabel: 'Otros servicios exteriores (Seguros)' },
-  PUBLICIDAD:        { label: 'Publicidad',              desc: 'Web, redes sociales, publicidad',               color: '#db2777', bg: '#fce7f3', rentaLabel: 'Publicidad y relaciones públicas' },
-  REPARACIONES:      { label: 'Reparaciones',            desc: 'Mantenimiento y reparaciones',                  color: '#64748b', bg: '#f1f5f9', rentaLabel: 'Reparaciones y conservación' },
-  GASTOS_FINANCIEROS:{ label: 'Gastos financieros',      desc: 'Intereses, comisiones bancarias',               color: '#9333ea', bg: '#f3e8ff', rentaLabel: 'Gastos financieros' },
-  AMORTIZACIONES:    { label: 'Amortizaciones',          desc: 'Equipos, mobiliario, inmovilizado',             color: '#6b7280', bg: '#f3f4f6', rentaLabel: 'Amortizaciones' },
-  TRIBUTOS:          { label: 'Tributos',                desc: 'Tasas, licencias, impuestos deducibles',        color: '#b45309', bg: '#fef9c3', rentaLabel: 'Tributos fiscalmente deducibles' },
-  OTROS:             { label: 'Otros gastos',            desc: 'Otros gastos deducibles no clasificados',       color: '#475569', bg: '#f8fafc', rentaLabel: 'Otros gastos deducibles' },
+  SEG_SOCIAL:        { label: 'Seguridad Social',        desc: 'Cuotas autónomo',                               color: '#dc2626', bg: '#fee2e2', rentaLabel: 'Seguridad Social a cargo del empresario',         m100: { casilla: '0107', label: 'Cotizaciones Seg. Social titular' } },
+  ARRENDAMIENTOS:    { label: 'Arrendamientos',          desc: 'Local, despacho, alquiler de espacio',          color: '#7c3aed', bg: '#ede9fe', rentaLabel: 'Arrendamientos y cánones',                        m100: { casilla: '0108', label: 'Arrendamientos y cánones' } },
+  SUMINISTROS:       { label: 'Suministros',             desc: 'Luz, agua, internet, teléfono',                 color: '#2563eb', bg: '#dbeafe', rentaLabel: 'Suministros',                                     m100: { casilla: '0111', label: 'Otros servicios exteriores' } },
+  SERVICIOS_PROF:    { label: 'Servicios profesionales', desc: 'Gestoría, abogados, consultores',               color: '#0891b2', bg: '#e0f2fe', rentaLabel: 'Servicios de profesionales independientes',        m100: { casilla: '0110', label: 'Servicios de profesionales independientes' } },
+  MATERIAL_OFICINA:  { label: 'Material de oficina',     desc: 'Papelería, material de trabajo',                color: '#059669', bg: '#dcfce7', rentaLabel: 'Consumos de explotación',                         m100: { casilla: '0104', label: 'Consumos de explotación' } },
+  FORMACION:         { label: 'Formación',               desc: 'Cursos, libros, revistas profesionales',        color: '#65a30d', bg: '#f0fdf4', rentaLabel: 'Otros gastos deducibles (Formación)',              m100: { casilla: '0116', label: 'Otros gastos fiscalmente deducibles' } },
+  SEGUROS:           { label: 'Seguros',                 desc: 'RC, local, equipos profesionales',              color: '#d97706', bg: '#fef3c7', rentaLabel: 'Otros servicios exteriores (Seguros)',             m100: { casilla: '0625', label: 'Primas de seguros' } },
+  PUBLICIDAD:        { label: 'Publicidad',              desc: 'Web, redes sociales, publicidad',               color: '#db2777', bg: '#fce7f3', rentaLabel: 'Publicidad y relaciones públicas',                 m100: { casilla: '0111', label: 'Otros servicios exteriores' } },
+  REPARACIONES:      { label: 'Reparaciones',            desc: 'Mantenimiento y reparaciones',                  color: '#64748b', bg: '#f1f5f9', rentaLabel: 'Reparaciones y conservación',                     m100: { casilla: '0109', label: 'Reparaciones y conservación' } },
+  GASTOS_FINANCIEROS:{ label: 'Gastos financieros',      desc: 'Intereses, comisiones bancarias',               color: '#9333ea', bg: '#f3e8ff', rentaLabel: 'Gastos financieros',                              m100: { casilla: '0113', label: 'Gastos financieros' } },
+  AMORTIZACIONES:    { label: 'Amortizaciones',          desc: 'Equipos, mobiliario, inmovilizado',             color: '#6b7280', bg: '#f3f4f6', rentaLabel: 'Amortizaciones',                                  m100: { casilla: '0114', label: 'Amortizaciones' } },
+  TRIBUTOS:          { label: 'Tributos',                desc: 'Tasas, licencias, impuestos deducibles',        color: '#b45309', bg: '#fef9c3', rentaLabel: 'Tributos fiscalmente deducibles',                  m100: { casilla: '0112', label: 'Tributos fiscalmente deducibles' } },
+  OTROS:             { label: 'Otros gastos',            desc: 'Otros gastos deducibles no clasificados',       color: '#475569', bg: '#f8fafc', rentaLabel: 'Otros gastos deducibles',                          m100: { casilla: '0116', label: 'Otros gastos fiscalmente deducibles' } },
 };
+
+const CATEGORY_KEYWORDS = {
+  SEG_SOCIAL:         ['autónomo', 'autonomo', 'seguridad social', 'cuota', 'reta ', 'cotización', 'cotizacion', 'seg social', 'cuota seg'],
+  ARRENDAMIENTOS:     ['alquiler', 'arrendamiento', 'canon', 'cánon', 'alquiler local', 'alquiler despacho', 'renta local', 'coworking'],
+  SUMINISTROS:        ['luz', 'electricidad', 'agua', 'internet', 'teléfono', 'telefono', 'fibra', 'gas ', 'suministro', 'factura luz', 'factura agua', 'tarifa'],
+  SERVICIOS_PROF:     ['gestor', 'gestoría', 'gestoria', 'asesor', 'abogado', 'consultor', 'notario', 'contable', 'asesoría', 'asesoria', 'perito', 'economista'],
+  MATERIAL_OFICINA:   ['material', 'papel', 'tinta', 'cartucho', 'papelería', 'papeleria', 'bolígrafo', 'cuaderno', 'consumible', 'material oficina'],
+  FORMACION:          ['curso', 'formación', 'formacion', 'libro', 'congreso', 'seminario', 'taller', 'máster', 'master', 'conferencia', 'jornada', 'certificación', 'certificacion', 'udemy', 'formación continua'],
+  SEGUROS:            ['seguro', 'responsabilidad civil', 'póliza', 'poliza', 'rc profesional', 'seguro local', 'seguro rc'],
+  PUBLICIDAD:         ['publicidad', 'marketing', 'web ', 'página web', 'pagina web', 'redes sociales', 'diseño web', 'logo', 'seo', 'google ads', 'campaña', 'anuncio', 'dominio', 'hosting'],
+  REPARACIONES:       ['reparación', 'reparacion', 'mantenimiento', 'avería', 'averia', 'arreglo', 'técnico', 'servicio técnico'],
+  GASTOS_FINANCIEROS: ['interés', 'interes', 'comisión bancaria', 'comision bancaria', 'transferencia internacional', 'préstamo', 'prestamo', 'hipoteca profesional', 'comisión banco', 'gastos banco'],
+  AMORTIZACIONES:     ['amortización', 'amortizacion', 'ordenador', 'portátil', 'portatil', 'tablet', 'móvil profesional', 'equipo informático', 'equipo informatico', 'mobiliario', 'impresora', 'cámara', 'camara', 'monitor', 'teclado', 'ratón'],
+  TRIBUTOS:           ['tasa', 'licencia', 'impuesto municipal', 'tributo', 'iae', 'ayuntamiento', 'tasa municipal', 'licencia apertura', 'tasa basura'],
+};
+
+function inferCategoryFromDesc(desc) {
+  if (!desc || desc.length < 3) return null;
+  const lower = desc.toLowerCase();
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some(kw => lower.includes(kw))) return cat;
+  }
+  return null;
+}
 
 let expensesData = [];
 let expensesYear = new Date().getFullYear();
@@ -233,8 +257,10 @@ async function openExpenseModal(id = null) {
         <div class="form-group">
           <label class="form-label">Categoría fiscal <span class="required">*</span></label>
           <select class="form-control" id="exp-category">${categoryOptions}</select>
+          <div id="exp-m100-badge" style="margin-top:5px;font-size:11.5px;color:var(--text-secondary);display:flex;align-items:center;gap:5px;"></div>
         </div>
       </div>
+      <div id="exp-cat-suggestion" style="display:none;margin-bottom:10px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);font-size:12.5px;color:#1e40af;align-items:center;gap:8px;flex-wrap:wrap;"></div>
       <div class="form-group">
         <label class="form-label">Descripción <span class="required">*</span></label>
         <input type="text" class="form-control" id="exp-description" value="${escapeHtml(v.description || '')}" placeholder="Ej: Cuota autónomo enero" autofocus>
@@ -305,8 +331,65 @@ async function openExpenseModal(id = null) {
   });
   updateExpensePreview();
 
+  // M-100 badge: update when category changes
+  const catSelect = document.getElementById('exp-category');
+  if (catSelect) {
+    catSelect.addEventListener('change', () => {
+      updateM100Badge();
+      // Hide inference suggestion when user manually picks a category
+      const sug = document.getElementById('exp-cat-suggestion');
+      if (sug) sug.style.display = 'none';
+    });
+    updateM100Badge();
+  }
+
+  // Auto-infer category from description
+  const descInput = document.getElementById('exp-description');
+  if (descInput) {
+    descInput.addEventListener('input', () => {
+      const inferred = inferCategoryFromDesc(descInput.value);
+      const current = document.getElementById('exp-category')?.value;
+      const sug = document.getElementById('exp-cat-suggestion');
+      if (!sug) return;
+      if (inferred && inferred !== current) {
+        const cat = EXPENSE_CATEGORIES[inferred];
+        const m100 = cat?.m100;
+        sug.style.display = 'flex';
+        sug.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Sugerencia: <strong>${escapeHtml(cat.label)}</strong>${m100 ? ` · casilla <strong>${m100.casilla}</strong> M-100` : ''}</span>
+          <button type="button" onclick="applyExpenseCatSuggestion('${inferred}')" style="margin-left:auto;padding:2px 10px;font-size:11.5px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;">Aplicar</button>
+          <button type="button" onclick="document.getElementById('exp-cat-suggestion').style.display='none'" style="padding:2px 8px;font-size:11.5px;background:none;border:1px solid #93c5fd;border-radius:4px;cursor:pointer;color:#1e40af;">Ignorar</button>
+        `;
+      } else {
+        sug.style.display = 'none';
+      }
+    });
+    // Trigger on load if description is pre-filled (edit mode) and no category mismatch
+    if (descInput.value) descInput.dispatchEvent(new Event('input'));
+  }
+
   // Show/hide attach button when doc is already set
   updateExpenseDocUI();
+}
+
+function updateM100Badge() {
+  const catKey = document.getElementById('exp-category')?.value;
+  const badge = document.getElementById('exp-m100-badge');
+  if (!badge) return;
+  const cat = EXPENSE_CATEGORIES[catKey];
+  if (cat?.m100) {
+    badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">M-100 · casilla ${escapeHtml(cat.m100.casilla)}</span><span style="color:var(--text-secondary);">${escapeHtml(cat.m100.label)}</span>`;
+  } else {
+    badge.innerHTML = '';
+  }
+}
+
+function applyExpenseCatSuggestion(catKey) {
+  const select = document.getElementById('exp-category');
+  if (select) { select.value = catKey; select.dispatchEvent(new Event('change')); }
+  const sug = document.getElementById('exp-cat-suggestion');
+  if (sug) sug.style.display = 'none';
 }
 
 function updateExpensePreview() {
