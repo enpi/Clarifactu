@@ -182,7 +182,6 @@ ipcMain.handle('invoices:markAsPending', (e, id) => { db.invoices.markAsPending(
 ipcMain.handle('invoices:getByClient', (e, clientId) => db.invoices.getByClient(clientId));
 ipcMain.handle('invoices:getOverdue', (e, days) => db.invoices.getOverdue(days));
 ipcMain.handle('invoices:getByRectifiedId', (e, id) => db.invoices.getByRectifiedId(id));
-ipcMain.handle('invoices:markAsRectified', (e, id) => { db.invoices.markAsRectified(id); return { success: true }; });
 
 ipcMain.handle('invoices:exportCSV', async (e, year) => {
   const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
@@ -555,15 +554,8 @@ ipcMain.handle('settings:markOnboardingDone', () => { db.settings.markOnboarding
 
 // Generate Invoice Number
 ipcMain.handle('generateInvoiceNumber', () => {
-  const settings = db.settings.getNumberSettings();
   const year = new Date().getFullYear();
-
-  // Reset counter if year changed
-  if (settings.current_year !== year) {
-    db.settings.resetYearCounter(year);
-    settings.counter = 0;
-    settings.current_year = year;
-  }
+  const settings = db.settings.ensureCurrentYear(year); // resets both series on a new year
 
   const newCounter = settings.counter + 1;
   const paddedNumber = String(newCounter).padStart(settings.digits, '0');
@@ -806,109 +798,15 @@ ipcMain.handle('documentTemplates:delete', (e, id) => db.documentTemplates.delet
 // ─── Verifactu ───────────────────────────────────────────────────────────────
 
 
-function vfNum(n) { return (Math.round((n || 0) * 100) / 100).toFixed(2); }
-
-function vfDate(s) {
-  if (!s) return '';
-  const p = s.split('-');
-  return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : s;
-}
-
-function vfTimestamp() {
-  const n = new Date(), z = v => String(v).padStart(2, '0');
-  return `${n.getFullYear()}-${z(n.getMonth()+1)}-${z(n.getDate())}T${z(n.getHours())}:${z(n.getMinutes())}:${z(n.getSeconds())}+01:00`;
-}
-
-function calcHuella(invoice, business, prevHash, fechaHoraGen) {
-  const chain = [
-    `IDEmisorFactura=${business.nif || ''}`,
-    `NumSerieFactura=${invoice.invoice_number || ''}`,
-    `FechaExpedicionFactura=${vfDate(invoice.date)}`,
-    `TipoFactura=F1`,
-    `CuotaTotal=${vfNum(invoice.tax_amount || 0)}`,
-    `ImporteTotal=${vfNum(invoice.total || 0)}`,
-    `Huella=${prevHash || ''}`,
-    `FechaHoraHusoGenRegistro=${fechaHoraGen}`
-  ].join('&');
-  return crypto.createHash('sha256').update(chain, 'utf8').digest('hex').toUpperCase();
-}
-
-function xe(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-}
-
-function buildVerifactuXML(invoices, business, vfCfg) {
-  const registros = invoices.map(inv => {
-    const chain = inv.huella_anterior
-      ? `<RegistroAnterior>
-            <IDEmisorFacturaAnterior>${xe(business.nif)}</IDEmisorFacturaAnterior>
-            <NumSerieFacturaAnterior>${xe(inv._prevNumSerie||'')}</NumSerieFacturaAnterior>
-            <FechaExpedicionFacturaAnterior>${xe(inv._prevFecha||'')}</FechaExpedicionFacturaAnterior>
-            <Huella>${xe(inv.huella_anterior)}</Huella>
-          </RegistroAnterior>`
-      : `<PrimerRegistro>S</PrimerRegistro>`;
-    return `<RegistroAlta>
-        <IDVersion>1.0</IDVersion>
-        <IDFactura>
-          <IDEmisorFactura>${xe(business.nif)}</IDEmisorFactura>
-          <NumSerieFactura>${xe(inv.invoice_number)}</NumSerieFactura>
-          <FechaExpedicionFactura>${xe(vfDate(inv.date))}</FechaExpedicionFactura>
-        </IDFactura>
-        <NombreRazonEmisor>${xe(business.name)}</NombreRazonEmisor>
-        <TipoFactura>F1</TipoFactura>
-        <DescripcionOperacion>Servicios profesionales</DescripcionOperacion>
-        ${inv.client_name ? `<Destinatarios><IDDestinatario>
-          <NombreRazon>${xe(inv.client_name)}</NombreRazon>
-          ${inv.client_nif ? `<NIF>${xe(inv.client_nif)}</NIF>` : ''}
-        </IDDestinatario></Destinatarios>` : ''}
-        <Desglose><DetalleIVA>
-          <TipoImpositivo>${vfNum(inv.tax_rate||0)}</TipoImpositivo>
-          <BaseImponible>${vfNum(inv.subtotal||0)}</BaseImponible>
-          <CuotaRepercutida>${vfNum(inv.tax_amount||0)}</CuotaRepercutida>
-        </DetalleIVA></Desglose>
-        <CuotaTotal>${vfNum(inv.tax_amount||0)}</CuotaTotal>
-        <ImporteTotal>${vfNum(inv.total||0)}</ImporteTotal>
-        <Encadenamiento>${chain}</Encadenamiento>
-        <SistemaInformatico>
-          <NombreRazon>Clarifactu</NombreRazon>
-          <NIF>${xe(business.nif)}</NIF>
-          <NombreSistemaInformatico>Clarifactu</NombreSistemaInformatico>
-          <IdSistemaInformatico>${xe(vfCfg.id_sistema||'CLARIFACTU')}</IdSistemaInformatico>
-          <Version>${xe(vfCfg.version_sistema||'1.0')}</Version>
-          <NumeroInstalacion>${xe(vfCfg.num_instalacion||'1')}</NumeroInstalacion>
-        </SistemaInformatico>
-        <FechaHoraHusoGenRegistro>${xe(inv.fecha_hora_gen)}</FechaHoraHusoGenRegistro>
-        <TipoHuella>01</TipoHuella>
-        <Huella>${xe(inv.huella)}</Huella>
-      </RegistroAlta>`;
-  }).join('\n      ');
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-  xmlns:T="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SistemaFacturacionVerifactu.wsdl">
-  <soapenv:Body>
-    <T:RegFactuSistemaFacturacion>
-      <Cabecera>
-        <ObligadoEmision>
-          <NombreRazon>${xe(business.name)}</NombreRazon>
-          <NIF>${xe(business.nif)}</NIF>
-        </ObligadoEmision>
-      </Cabecera>
-      <RegistroFacturacion>
-        ${registros}
-      </RegistroFacturacion>
-    </T:RegFactuSistemaFacturacion>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-}
+const { vfNum, vfDate, vfTimestamp, calcHuella, buildVerifactuXML } = require('./src/verifactu');
 
 ipcMain.handle('verifactu:getSettings', () => db.verifactu.getSettings());
 ipcMain.handle('verifactu:saveSettings', (e, data) => db.verifactu.saveSettings(data));
 
 ipcMain.handle('verifactu:processInvoice', (e, invoiceId) => {
+  const prev = db.verifactu.prepareHash(invoiceId); // throws for registered records
   const invoice = db.invoices.getById(invoiceId);
   const business = db.settings.getBusiness();
-  const prev = db.verifactu.getLastInvoiceHash(invoiceId);
   const fechaHoraGen = vfTimestamp();
   const prevHash = prev ? prev.huella : '';
   const huella = calcHuella(invoice, business, prevHash, fechaHoraGen);
@@ -935,11 +833,7 @@ ipcMain.handle('verifactu:generateQR', async (e, invoiceId) => {
 ipcMain.handle('verifactu:generateXML', (e, invoiceIds) => {
   const business = db.settings.getBusiness();
   const vfCfg = db.verifactu.getSettings();
-  const invoices = invoiceIds.map(id => {
-    const inv = db.invoices.getById(id);
-    const client = inv.client_id ? db.clients.getById(inv.client_id) : null;
-    return { ...inv, client_nif: client?.nif || '', client_name: client?.name || inv.client_name || '' };
-  });
+  const invoices = db.verifactu.getRecordsForSubmission(invoiceIds); // chain order
   return { success: true, xml: buildVerifactuXML(invoices, business, vfCfg) };
 });
 
@@ -963,11 +857,7 @@ ipcMain.handle('verifactu:submit', async (e, invoiceIds) => {
   }
   const https = require('https');
   const business = db.settings.getBusiness();
-  const invoices = invoiceIds.map(id => {
-    const inv = db.invoices.getById(id);
-    const client = inv.client_id ? db.clients.getById(inv.client_id) : null;
-    return { ...inv, client_nif: client?.nif||'', client_name: client?.name||inv.client_name||'' };
-  });
+  const invoices = db.verifactu.getRecordsForSubmission(invoiceIds); // chain order
   if (invoices.some(inv => !inv.huella)) {
     return { success: false, error: 'Hay facturas sin huella calculada. Calcula las huellas primero.' };
   }
@@ -1022,11 +912,7 @@ ipcMain.handle('verifactu:selectCert', async () => {
 async function submitViaDNIe(invoiceIds, vfCfg) {
   const { execSync } = require('child_process');
   const business = db.settings.getBusiness();
-  const invoices = invoiceIds.map(id => {
-    const inv = db.invoices.getById(id);
-    const client = inv.client_id ? db.clients.getById(inv.client_id) : null;
-    return { ...inv, client_nif: client?.nif || '', client_name: client?.name || inv.client_name || '' };
-  });
+  const invoices = db.verifactu.getRecordsForSubmission(invoiceIds); // chain order
   if (invoices.some(inv => !inv.huella)) {
     return { success: false, error: 'Hay facturas sin huella calculada. Calcula las huellas primero.' };
   }

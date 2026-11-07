@@ -41,7 +41,6 @@ contextBridge.exposeInMainWorld('api', {
     getByClient: (clientId) => ipcRenderer.invoke('invoices:getByClient', clientId),
     getOverdue: (days) => ipcRenderer.invoke('invoices:getOverdue', days),
     getByRectifiedId: (id) => ipcRenderer.invoke('invoices:getByRectifiedId', id),
-    markAsRectified: (id) => ipcRenderer.invoke('invoices:markAsRectified', id),
     exportCSV: (year) => ipcRenderer.invoke('invoices:exportCSV', year),
     exportExcel: (year) => ipcRenderer.invoke('invoices:exportExcel', year),
     exportPDFSummary: (year) => ipcRenderer.invoke('invoices:exportPDFSummary', year)

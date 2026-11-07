@@ -16,110 +16,9 @@ const os     = require('os');
 const path   = require('path');
 const fs     = require('fs');
 
-// ─── Replicate pure functions from main.js ────────────────────────────────────
-// These are standalone pure functions — no Electron dependency.
+// ─── VeriFactu functions under test (the same module main.js uses) ────────────
 
-function vfNum(n) {
-  return (Math.round((n || 0) * 100) / 100).toFixed(2);
-}
-
-function vfDate(s) {
-  if (!s) return '';
-  const p = s.split('-');
-  return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : s;
-}
-
-function xe(s) {
-  return String(s || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-function calcHuella(invoice, business, prevHash, fechaHoraGen) {
-  const chain = [
-    `IDEmisorFactura=${business.nif || ''}`,
-    `NumSerieFactura=${invoice.invoice_number || ''}`,
-    `FechaExpedicionFactura=${vfDate(invoice.date)}`,
-    `TipoFactura=F1`,
-    `CuotaTotal=${vfNum(invoice.tax_amount || 0)}`,
-    `ImporteTotal=${vfNum(invoice.total || 0)}`,
-    `Huella=${prevHash || ''}`,
-    `FechaHoraHusoGenRegistro=${fechaHoraGen}`
-  ].join('&');
-  return crypto.createHash('sha256').update(chain, 'utf8').digest('hex').toUpperCase();
-}
-
-function buildVerifactuXML(invoices, business, vfCfg) {
-  const registros = invoices.map(inv => {
-    const chain = inv.huella_anterior
-      ? `<RegistroAnterior>
-            <IDEmisorFacturaAnterior>${xe(business.nif)}</IDEmisorFacturaAnterior>
-            <NumSerieFacturaAnterior>${xe(inv._prevNumSerie || '')}</NumSerieFacturaAnterior>
-            <FechaExpedicionFacturaAnterior>${xe(inv._prevFecha || '')}</FechaExpedicionFacturaAnterior>
-            <Huella>${xe(inv.huella_anterior)}</Huella>
-          </RegistroAnterior>`
-      : `<PrimerRegistro>S</PrimerRegistro>`;
-    return `<RegistroAlta>
-        <IDVersion>1.0</IDVersion>
-        <IDFactura>
-          <IDEmisorFactura>${xe(business.nif)}</IDEmisorFactura>
-          <NumSerieFactura>${xe(inv.invoice_number)}</NumSerieFactura>
-          <FechaExpedicionFactura>${xe(vfDate(inv.date))}</FechaExpedicionFactura>
-        </IDFactura>
-        <NombreRazonEmisor>${xe(business.name)}</NombreRazonEmisor>
-        <TipoFactura>F1</TipoFactura>
-        <DescripcionOperacion>Servicios profesionales</DescripcionOperacion>
-        ${inv.client_name ? `<Destinatarios><IDDestinatario>
-          <NombreRazon>${xe(inv.client_name)}</NombreRazon>
-          ${inv.client_nif ? `<NIF>${xe(inv.client_nif)}</NIF>` : ''}
-        </IDDestinatario></Destinatarios>` : ''}
-        <Desglose><DetalleIVA>
-          <TipoImpositivo>${vfNum(inv.tax_rate || 0)}</TipoImpositivo>
-          <BaseImponible>${vfNum(inv.subtotal || 0)}</BaseImponible>
-          <CuotaRepercutida>${vfNum(inv.tax_amount || 0)}</CuotaRepercutida>
-        </DetalleIVA></Desglose>
-        <CuotaTotal>${vfNum(inv.tax_amount || 0)}</CuotaTotal>
-        <ImporteTotal>${vfNum(inv.total || 0)}</ImporteTotal>
-        <Encadenamiento>${chain}</Encadenamiento>
-        <SistemaInformatico>
-          <NombreRazon>Clarifactu</NombreRazon>
-          <NIF>${xe(business.nif)}</NIF>
-          <NombreSistemaInformatico>Clarifactu</NombreSistemaInformatico>
-          <IdSistemaInformatico>${xe(vfCfg.id_sistema || 'CLARIFACTU')}</IdSistemaInformatico>
-          <Version>${xe(vfCfg.version_sistema || '1.0')}</Version>
-          <NumeroInstalacion>${xe(vfCfg.num_instalacion || '1')}</NumeroInstalacion>
-        </SistemaInformatico>
-        <FechaHoraHusoGenRegistro>${xe(inv.fecha_hora_gen)}</FechaHoraHusoGenRegistro>
-        <TipoHuella>01</TipoHuella>
-        <Huella>${xe(inv.huella)}</Huella>
-      </RegistroAlta>`;
-  }).join('\n      ');
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-  xmlns:T="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SistemaFacturacionVerifactu.wsdl">
-  <soapenv:Body>
-    <T:RegFactuSistemaFacturacion>
-      <Cabecera>
-        <ObligadoEmision>
-          <NombreRazon>${xe(business.name)}</NombreRazon>
-          <NIF>${xe(business.nif)}</NIF>
-        </ObligadoEmision>
-      </Cabecera>
-      <RegistroFacturacion>
-        ${registros}
-      </RegistroFacturacion>
-    </T:RegFactuSistemaFacturacion>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-}
-
-function buildQRUrl(invoice, business) {
-  return `https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=${encodeURIComponent(business.nif)}&numserie=${encodeURIComponent(invoice.invoice_number)}&fecha=${encodeURIComponent(vfDate(invoice.date))}&importe=${encodeURIComponent(vfNum(invoice.total || 0))}`;
-}
+const { vfNum, vfDate, xe, calcHuella, buildVerifactuXML, buildQRUrl } = require('../../src/verifactu');
 
 // ─── DB setup ─────────────────────────────────────────────────────────────────
 
@@ -358,6 +257,22 @@ describe('calcHuella()', () => {
     expect(h2).toBe(expected);
   });
 
+  test('credit notes are hashed with their own type (R1)', () => {
+    const r1 = { ...INV_BASE, tipo_factura: 'R1' };
+    const chainStr = [
+      `IDEmisorFactura=${BUSINESS.nif}`,
+      `NumSerieFactura=${r1.invoice_number}`,
+      `FechaExpedicionFactura=${vfDate(r1.date)}`,
+      `TipoFactura=R1`,
+      `CuotaTotal=${vfNum(r1.tax_amount)}`,
+      `ImporteTotal=${vfNum(r1.total)}`,
+      `Huella=`,
+      `FechaHoraHusoGenRegistro=${TS}`
+    ].join('&');
+    expect(calcHuella(r1, BUSINESS, '', TS)).toBe(crypto.createHash('sha256').update(chainStr, 'utf8').digest('hex').toUpperCase());
+    expect(calcHuella(r1, BUSINESS, '', TS)).not.toBe(calcHuella(INV_BASE, BUSINESS, '', TS));
+  });
+
   test('handles null/undefined amounts as 0', () => {
     const inv = { ...INV_BASE, tax_amount: null, total: undefined };
     const h = calcHuella(inv, BUSINESS, '', TS);
@@ -449,8 +364,8 @@ describe('buildVerifactuXML()', () => {
     tax_amount: 42,
     huella: 'DEF456',
     huella_anterior: 'ABC123',
-    _prevNumSerie: 'F-2024-0001',
-    _prevFecha: '15-06-2024',
+    prev_invoice_number: 'F-2024-0001',
+    prev_date: '2024-06-15',
   };
 
   test('produces valid XML declaration', () => {
@@ -553,9 +468,28 @@ describe('buildVerifactuXML()', () => {
     expect(xml).toContain('<TipoHuella>01</TipoHuella>');
   });
 
-  test('TipoFactura is always F1', () => {
+  test('TipoFactura defaults to F1 with no rectification block', () => {
     const xml = buildVerifactuXML([inv1], business, vfCfg);
     expect(xml).toContain('<TipoFactura>F1</TipoFactura>');
+    expect(xml).not.toContain('<TipoRectificativa>');
+  });
+
+  test('previous record number and date are filled in (DD-MM-YYYY)', () => {
+    const xml = buildVerifactuXML([inv2], business, vfCfg);
+    expect(xml).toContain('<NumSerieFacturaAnterior>F-2024-0001</NumSerieFacturaAnterior>');
+    expect(xml).toContain('<FechaExpedicionFacturaAnterior>15-06-2024</FechaExpedicionFacturaAnterior>');
+  });
+
+  test('credit notes are sent as R1 "por diferencias" with the corrected invoice', () => {
+    const r1 = { ...inv1, invoice_number: 'R-2024-0001', tipo_factura: 'R1', total: -121, tax_amount: -21,
+      rect_invoice_number: 'F-2024-0001', rect_date: '2024-06-15' };
+    const xml = buildVerifactuXML([r1], business, vfCfg);
+    expect(xml).toContain('<TipoFactura>R1</TipoFactura>');
+    expect(xml).toContain('<TipoRectificativa>I</TipoRectificativa>');
+    expect(xml).toMatch(/<IDFacturaRectificada>[\s\S]*<NumSerieFactura>F-2024-0001<\/NumSerieFactura>[\s\S]*<FechaExpedicionFactura>15-06-2024<\/FechaExpedicionFactura>[\s\S]*<\/IDFacturaRectificada>/);
+    // Schema order: TipoFactura → TipoRectificativa → FacturasRectificadas → DescripcionOperacion
+    const order = ['<TipoFactura>', '<TipoRectificativa>', '<FacturasRectificadas>', '<DescripcionOperacion>'].map(t => xml.indexOf(t));
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
 

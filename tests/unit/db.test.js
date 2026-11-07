@@ -515,3 +515,167 @@ describe('Invoice renumbering', () => {
     expect(db.invoices.getById(ids[3]).huella).toBeNull();
   });
 });
+
+// ─── Invoice state machines ───────────────────────────────────────────────────
+
+describe('Invoice state transitions', () => {
+  const RUN = `SM${Date.now()}`; // unique per run: the tmp DB can survive between runs
+  const YEAR = new Date().getFullYear();
+  let clientId;
+  let seq = 0;
+
+  const base = (over = {}) => ({
+    invoice_number: `${RUN}-${++seq}`, client_id: clientId, date: `${YEAR}-02-01`, notes: '',
+    subtotal: 100, tax_rate: 0, tax_amount: 0, irpf_rate: 0, irpf_amount: 0, total: 100, items: [], ...over
+  });
+  const mk = (over) => db.invoices.create(base(over));
+  const get = id => db.invoices.getById(id);
+  const setVf = (id, huella, prev, status = 'pendiente', csv = null) =>
+    db.verifactu.updateInvoiceVerifactu(id, { huella, huella_anterior: prev, fecha_hora_gen: new Date(Date.now() + (++seq) * 1000).toISOString().slice(0, 19) + '+01:00', verifactu_status: status, verifactu_csv: csv });
+  const edit = (inv, over) => db.invoices.update(inv.id, { ...base(), ...inv, ...over, items: [] });
+
+  // Three pending records chained A → B → C
+  const chain = () => {
+    const a = mk(), b = mk(), c = mk();
+    const [ha, hb, hc] = ['A', 'B', 'C'].map(x => `${RUN}${x}${c.id}`);
+    setVf(a.id, ha, '');
+    setVf(b.id, hb, ha);
+    setVf(c.id, hc, hb);
+    return [get(a.id), get(b.id), get(c.id)];
+  };
+
+  beforeAll(() => {
+    clientId = db.clients.create({ name: 'SM', nif: '', address: '', email: '', phone: '', notes: '' }).id;
+  });
+
+  describe('VeriFactu: registered records are final', () => {
+    let reg;
+    beforeAll(() => { reg = mk(); setVf(reg.id, `${RUN}REG`, '', 'enviada', 'CSV1'); });
+
+    test('cannot be edited', () => {
+      expect(() => edit(get(reg.id), { total: 50 })).toThrow(/registrada en VeriFactu/);
+    });
+    test('cannot be deleted', () => {
+      expect(() => db.invoices.delete(reg.id)).toThrow(/registrada en VeriFactu/);
+      expect(get(reg.id)).toBeTruthy();
+    });
+    test('cannot get a new hash', () => {
+      expect(() => db.verifactu.prepareHash(reg.id)).toThrow(/registrada en VeriFactu/);
+      expect(get(reg.id).verifactu_csv).toBe('CSV1');
+    });
+  });
+
+  describe('VeriFactu: invalidating a pending hash', () => {
+    test('editing a hashed field clears that record and every record chained after it', () => {
+      const [a, b, c] = chain();
+      edit(b, { total: 120 });
+      expect(get(a.id).huella).toBe(a.huella);
+      expect(get(b.id).huella).toBeNull();
+      expect(get(c.id).huella).toBeNull();
+    });
+
+    test('editing only the notes keeps the hashes', () => {
+      const [, b, c] = chain();
+      edit(b, { notes: 'solo notas' });
+      expect(get(b.id).huella).toBe(b.huella);
+      expect(get(c.id).huella).toBe(c.huella);
+    });
+
+    test('deleting a pending record clears the records chained after it', () => {
+      const [a, b, c] = chain();
+      db.invoices.delete(b.id);
+      expect(get(a.id).huella).toBe(a.huella);
+      expect(get(c.id).huella).toBeNull();
+    });
+
+    test('blocked when a later record in the chain is registered', () => {
+      const [, b, c] = chain();
+      setVf(c.id, c.huella, b.huella, 'enviada', 'CSV2');
+      expect(() => edit(b, { total: 1 })).toThrow(/encadenada/);
+      expect(get(b.id).huella).toBe(b.huella);
+      expect(db.invoices.checkRenumber(b.id, `${RUN}-new`).ok).toBe(false);
+    });
+
+    test('renumbering clears the chained records and warns about them', () => {
+      const [, b, c] = chain();
+      const check = db.invoices.checkRenumber(b.id, `${RUN}-renum`);
+      expect(check.ok).toBe(true);
+      expect(check.warnings.join(' ')).toMatch(/1 factura\(s\) posterior/);
+      expect(db.invoices.renumber(b.id, `${RUN}-renum`).success).toBe(true);
+      expect(get(c.id).huella).toBeNull();
+    });
+  });
+
+  describe('VeriFactu: chain tail', () => {
+    test('is the record nothing links to, not the highest id', () => {
+      const [, , c] = chain();
+      const older = mk();
+      // An older-id invoice re-hashed last becomes the tail
+      setVf(older.id, `${RUN}TAIL`, c.huella);
+      const tail = db.verifactu.getLastInvoiceHash();
+      expect(tail.huella).toBe(`${RUN}TAIL`);
+      const later = mk(); // higher id, no hash
+      expect(db.verifactu.getLastInvoiceHash(later.id).huella).toBe(`${RUN}TAIL`);
+      // Excluding the tail itself returns the record before it
+      expect(db.verifactu.getLastInvoiceHash(older.id).huella).toBe(c.huella);
+    });
+
+    test('prepareHash clears the old hash and returns the tail to chain to', () => {
+      const [a, b, c] = chain();
+      const prev = db.verifactu.prepareHash(a.id);
+      expect(get(a.id).huella).toBeNull();
+      expect(get(b.id).huella).toBeNull();
+      expect(get(c.id).huella).toBeNull();
+      expect(prev === undefined || ![a.huella, b.huella, c.huella].includes(prev.huella)).toBe(true);
+    });
+  });
+
+  describe('VeriFactu: records for submission', () => {
+    test('come in chain order with the previous record and corrected invoice filled in', () => {
+      const [a, b, c] = chain();
+      const rect = mk({ tipo_factura: 'R1', factura_rectificada_id: a.id, total: -100 });
+      setVf(rect.id, `${RUN}R${rect.id}`, c.huella);
+      const recs = db.verifactu.getRecordsForSubmission([rect.id, c.id, a.id, b.id]);
+      expect(recs.map(r => r.id)).toEqual([a.id, b.id, c.id, rect.id]);
+      expect(recs[1].prev_invoice_number).toBe(a.invoice_number);
+      expect(recs[1].prev_date).toBe(a.date);
+      expect(recs[0].prev_invoice_number).toBeNull();
+      expect(recs[3].rect_invoice_number).toBe(a.invoice_number);
+      expect(recs[3].client_name).toBe('SM');
+    });
+
+    test('a record whose predecessor was already sent still gets the predecessor data', () => {
+      const [a, b] = chain();
+      const [rec] = db.verifactu.getRecordsForSubmission([b.id]);
+      expect(rec.prev_invoice_number).toBe(a.invoice_number);
+    });
+  });
+
+  describe('Credit notes', () => {
+    test('creating one marks the original as rectified in the same step', () => {
+      const orig = mk();
+      const r = mk({ tipo_factura: 'R1', factura_rectificada_id: orig.id, total: -100 });
+      expect(get(orig.id).rectified).toBe(1);
+      db.invoices.delete(r.id);
+      expect(get(orig.id).rectified).toBe(0);
+    });
+
+    test('deleting one keeps the mark while another credit note remains', () => {
+      const orig = mk();
+      const r1 = mk({ tipo_factura: 'R1', factura_rectificada_id: orig.id });
+      mk({ tipo_factura: 'R1', factura_rectificada_id: orig.id });
+      db.invoices.delete(r1.id);
+      expect(get(orig.id).rectified).toBe(1);
+    });
+
+    test('the credit note counter restarts in a new year', () => {
+      db.settings.commitRectificativaNumber(7);
+      db.settings.ensureCurrentYear(YEAR - 1); // simulate the year rolling over
+      db.settings.commitRectificativaNumber(7);
+      const { invoiceNumber, newCounter } = db.settings.generateRectificativaNumber(); // now YEAR again
+      expect(newCounter).toBe(1);
+      expect(invoiceNumber).toMatch(new RegExp(`${YEAR}.0*1$`));
+      expect(db.settings.getNumberSettings().counter).toBe(0);
+    });
+  });
+});

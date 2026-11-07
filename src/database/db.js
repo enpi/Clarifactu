@@ -371,6 +371,51 @@ function parseSequence(s, year, number) {
   return /^\d+$/.test(rest) ? parseInt(rest, 10) : null;
 }
 
+// ─── VeriFactu record state ───────────────────────────────────────────────────
+// no hash → pendiente (hash calculated) → enviada (registered at AEAT, final) / error
+
+function isRegistered(inv) {
+  return inv.verifactu_status === 'enviada' || !!inv.verifactu_csv;
+}
+
+function assertNotRegistered(inv, action) {
+  if (isRegistered(inv)) {
+    throw new Error(`La factura ${inv.invoice_number} ya está registrada en VeriFactu (AEAT) y no se puede ${action}. Emite una factura rectificativa.`);
+  }
+}
+
+// Records chained after `inv` (each one's huella_anterior is the previous one's huella).
+function hashChainAfter(inv) {
+  const next = db.prepare('SELECT * FROM invoices WHERE huella_anterior = ? AND id != ?');
+  const after = [];
+  const seen = new Set([inv.id]);
+  let cur = inv;
+  while (cur.huella) {
+    const n = next.get(cur.huella, cur.id);
+    if (!n || seen.has(n.id)) break;
+    seen.add(n.id);
+    after.push(n);
+    cur = n;
+  }
+  return after;
+}
+
+// Clears the hash of `inv` and of every record chained after it, so the chain can be
+// recalculated without links pointing at hashes that no longer exist.
+// Returns how many later records lost their hash. Throws if one is already registered.
+function invalidateHashChain(inv) {
+  if (!inv.huella) return 0;
+  const after = hashChainAfter(inv);
+  const registered = after.find(isRegistered);
+  if (registered) {
+    throw new Error(`La huella de ${inv.invoice_number} está encadenada con ${registered.invoice_number}, ya registrada en VeriFactu; no se puede modificar.`);
+  }
+  const clear = db.prepare(`UPDATE invoices SET huella = NULL, huella_anterior = NULL, fecha_hora_gen = NULL,
+    verifactu_status = 'pendiente', verifactu_csv = NULL WHERE id = ?`);
+  [inv, ...after].forEach(r => clear.run(r.id));
+  return after.length;
+}
+
 function invoiceNumberExists(number, excludeId = null) {
   return !!db.prepare('SELECT 1 FROM invoices WHERE invoice_number = ? AND id IS NOT ?').get(number, excludeId);
 }
@@ -383,11 +428,13 @@ function checkRenumber(id, newNumber) {
   if (!num) return { ok: false, error: 'El nuevo número no puede estar vacío.' };
   if (num === inv.invoice_number) return { ok: false, error: 'La factura ya tiene ese número.' };
   if (invoiceNumberExists(num, id)) return { ok: false, error: `Ya existe una factura con el número ${num}.` };
-  if (inv.verifactu_status === 'enviada' || inv.verifactu_csv) {
+  if (isRegistered(inv)) {
     return { ok: false, error: 'Esta factura ya está registrada en VeriFactu (AEAT) y no se puede renumerar.' };
   }
-  if (inv.huella && db.prepare('SELECT 1 FROM invoices WHERE huella_anterior = ? AND id != ?').get(inv.huella, id)) {
-    return { ok: false, error: 'La huella VeriFactu de esta factura ya está encadenada con otra posterior; renumerarla rompería la cadena.' };
+  const chainedAfter = inv.huella ? hashChainAfter(inv) : [];
+  const registeredAfter = chainedAfter.find(isRegistered);
+  if (registeredAfter) {
+    return { ok: false, error: `La huella de esta factura está encadenada con ${registeredAfter.invoice_number}, ya registrada en VeriFactu; renumerarla rompería la cadena.` };
   }
 
   const warnings = [];
@@ -406,7 +453,10 @@ function checkRenumber(id, newNumber) {
     warnings.push('El nuevo número no sigue el formato de numeración configurado.');
   }
   if (inv.email_sent_at) warnings.push('Esta factura ya se envió por email con el número antiguo; el cliente tendrá una copia con ese número.');
-  if (inv.huella) warnings.push('Se borrará su huella VeriFactu (aún no enviada) y habrá que recalcularla.');
+  if (inv.huella) {
+    warnings.push('Se borrará su huella VeriFactu (aún no enviada) y habrá que recalcularla' +
+      (chainedAfter.length ? `, junto con la de ${chainedAfter.length} factura(s) posterior(es) encadenada(s).` : '.'));
+  }
 
   return { ok: true, invoice: inv, newNumber: num, warnings };
 }
@@ -426,11 +476,8 @@ const invoices = {
       const oldNumber = inv.invoice_number;
       const num = check.newNumber;
 
+      invalidateHashChain(inv);
       db.prepare('UPDATE invoices SET invoice_number = ? WHERE id = ?').run(num, id);
-      if (inv.huella) {
-        db.prepare(`UPDATE invoices SET huella = NULL, huella_anterior = NULL, fecha_hora_gen = NULL,
-          verifactu_status = 'pendiente', verifactu_csv = NULL WHERE id = ?`).run(id);
-      }
 
       // If the moved invoice was the last one issued, pull the counter back so the
       // next invoice reuses the freed number instead of opening a new gap.
@@ -494,11 +541,17 @@ const invoices = {
     `);
 
     const transaction = db.transaction(() => {
-      const result = insertInvoice.run({ tipo_factura: 'F1', factura_rectificada_id: null, ...invoiceData });
+      const row = { tipo_factura: 'F1', factura_rectificada_id: null, ...invoiceData };
+      const result = insertInvoice.run(row);
       const invoiceId = result.lastInsertRowid;
 
       for (const item of items) {
         insertItem.run({ ...item, invoice_id: invoiceId });
+      }
+
+      // A credit note and the "rectified" mark on its original are one transition
+      if (row.tipo_factura === 'R1' && row.factura_rectificada_id) {
+        db.prepare('UPDATE invoices SET rectified = 1 WHERE id = ?').run(row.factura_rectificada_id);
       }
 
       return invoiceId;
@@ -530,6 +583,15 @@ const invoices = {
     `);
 
     const transaction = db.transaction(() => {
+      const current = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+      if (!current) throw new Error('La factura no existe.');
+      assertNotRegistered(current, 'modificar');
+      // The hash covers date, VAT and total: if any of them changes it is no longer valid
+      const hashedFieldChanged = current.date !== invoiceData.date ||
+        Number(current.tax_amount) !== Number(invoiceData.tax_amount) ||
+        Number(current.total) !== Number(invoiceData.total);
+      if (hashedFieldChanged) invalidateHashChain(current);
+
       updateInvoice.run({ ...invoiceData, id });
       deleteOldItems.run(id);
       for (const item of items) {
@@ -549,8 +611,17 @@ const invoices = {
     const deleteInvoice = db.prepare('DELETE FROM invoices WHERE id = ?');
 
     const transaction = db.transaction(() => {
+      const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+      if (!inv) return;
+      assertNotRegistered(inv, 'eliminar');
+      invalidateHashChain(inv);
       deleteItems.run(id);
       deleteInvoice.run(id);
+      // Deleting a credit note puts its original back to "not rectified" unless another remains
+      if (inv.tipo_factura === 'R1' && inv.factura_rectificada_id) {
+        const other = db.prepare("SELECT 1 FROM invoices WHERE tipo_factura = 'R1' AND factura_rectificada_id = ?").get(inv.factura_rectificada_id);
+        if (!other) db.prepare('UPDATE invoices SET rectified = 0 WHERE id = ?').run(inv.factura_rectificada_id);
+      }
     });
 
     transaction();
@@ -608,9 +679,6 @@ const invoices = {
       WHERE i.factura_rectificada_id = ?
       ORDER BY i.date DESC
     `).all(id);
-  },
-  markAsRectified(id) {
-    db.prepare(`UPDATE invoices SET rectified = 1 WHERE id = ?`).run(id);
   }
 };
 
@@ -665,11 +733,18 @@ const settings = {
     return db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
   },
   resetYearCounter(year) {
+    // Both series (normal and credit notes) restart every year
     db.prepare(`
       UPDATE invoice_number_settings
-      SET current_year=?, counter=0
+      SET current_year=?, counter=0, rectificativa_counter=0
       WHERE id=1
     `).run(year);
+  },
+  // Starts the new year's numbering on the first number generated in a new year.
+  ensureCurrentYear(year = new Date().getFullYear()) {
+    const s = db.prepare('SELECT current_year FROM invoice_number_settings WHERE id = 1').get();
+    if (s.current_year !== year) this.resetYearCounter(year);
+    return db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
   },
   resetCounter() {
     const ns = db.prepare('SELECT start_number FROM invoice_number_settings WHERE id=1').get();
@@ -683,8 +758,8 @@ const settings = {
     `).run(counter);
   },
   generateRectificativaNumber() {
-    const s = db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
     const year = new Date().getFullYear();
+    const s = this.ensureCurrentYear(year);
     const sep = s.separator || '-';
     const digits = s.digits || 4;
     const newCounter = (s.rectificativa_counter || 0) + 1;
@@ -855,13 +930,56 @@ const verifactu = {
     return db.prepare('SELECT * FROM verifactu_settings WHERE id = 1').get();
   },
   getLastInvoiceHash(excludeId = null) {
-    // Get the most recent invoice's hash for chaining
-    const query = excludeId
-      ? 'SELECT huella, invoice_number, date, id FROM invoices WHERE huella IS NOT NULL AND id != ? ORDER BY id DESC LIMIT 1'
-      : 'SELECT huella, invoice_number, date, id FROM invoices WHERE huella IS NOT NULL ORDER BY id DESC LIMIT 1';
-    return excludeId
-      ? db.prepare(query).get(excludeId)
-      : db.prepare(query).get();
+    // The chain tail: the hashed record no other record links to. Highest id is not enough,
+    // since a recalculated older invoice becomes the newest record in the chain.
+    return db.prepare(`
+      SELECT huella, invoice_number, date, id FROM invoices i
+      WHERE huella IS NOT NULL AND id IS NOT @ex
+        AND NOT EXISTS (SELECT 1 FROM invoices j WHERE j.huella_anterior = i.huella AND j.id IS NOT @ex)
+      ORDER BY fecha_hora_gen DESC, id DESC LIMIT 1
+    `).get({ ex: excludeId });
+  },
+  // Records ready for AEAT, in chain order (each after the record it links to), with the
+  // data the XML needs about the previous record and, for credit notes, the corrected invoice.
+  getRecordsForSubmission(ids) {
+    const rows = ids.map(id => db.prepare(`
+      SELECT i.*, c.name AS client_name, c.nif AS client_nif,
+             p.invoice_number AS prev_invoice_number, p.date AS prev_date,
+             r.invoice_number AS rect_invoice_number, r.date AS rect_date
+      FROM invoices i
+      LEFT JOIN clients c ON c.id = i.client_id
+      LEFT JOIN invoices p ON i.huella_anterior IS NOT NULL AND i.huella_anterior != '' AND p.huella = i.huella_anterior
+      LEFT JOIN invoices r ON r.id = i.factura_rectificada_id
+      WHERE i.id = ?
+    `).get(id)).filter(Boolean);
+
+    // Position in the chain = number of links back to a record outside this batch
+    const byHash = new Map(rows.filter(r => r.huella).map(r => [r.huella, r]));
+    const depth = r => {
+      let d = 0, cur = r;
+      const seen = new Set();
+      while (cur && cur.huella_anterior && byHash.has(cur.huella_anterior) && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        cur = byHash.get(cur.huella_anterior);
+        d++;
+      }
+      return d;
+    };
+    return rows
+      .map(r => ({ r, d: depth(r) }))
+      .sort((a, b) => a.d - b.d || String(a.r.fecha_hora_gen).localeCompare(String(b.r.fecha_hora_gen)) || a.r.id - b.r.id)
+      .map(x => x.r);
+  },
+  // Call before (re)calculating a hash: refuses registered records and clears this
+  // record's old hash and any chained after it. Returns the record to chain to.
+  prepareHash(id) {
+    return db.transaction(() => {
+      const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+      if (!inv) throw new Error('La factura no existe.');
+      assertNotRegistered(inv, 'recalcular su huella');
+      invalidateHashChain(inv);
+      return verifactu.getLastInvoiceHash(id);
+    })();
   },
   updateInvoiceVerifactu(id, data) {
     db.prepare(`

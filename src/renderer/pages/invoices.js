@@ -10,10 +10,7 @@ let overdueDays = 30;
 let selectedInvoiceIds = new Set();
 
 function isOverdue(inv) {
-  if (inv.payment_status === 'pagada') return false;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - overdueDays);
-  return inv.date && inv.date <= cutoff.toISOString().split('T')[0];
+  return isInvoiceOverdue(inv, overdueDays);
 }
 
 function paymentBadge(inv) {
@@ -416,9 +413,9 @@ function renderInvoicesTable(invoices) {
           <button class="btn btn-ghost btn-sm btn-icon" title="Ver factura" onclick="viewInvoice(${inv.id})">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
-          <button class="btn btn-ghost btn-sm btn-icon" title="Editar factura" onclick="editInvoice(${inv.id})">
+          ${!isVfRegistered(inv) ? `<button class="btn btn-ghost btn-sm btn-icon" title="Editar factura" onclick="editInvoice(${inv.id})">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
+          </button>` : ''}
           <button class="btn btn-ghost btn-sm btn-icon" title="Duplicar factura" onclick="duplicateInvoice(${inv.id})">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
@@ -431,9 +428,9 @@ function renderInvoicesTable(invoices) {
           ${inv.tipo_factura !== 'R1' && !inv.rectified ? `<button class="btn btn-ghost btn-sm btn-icon" title="Crear rectificativa" onclick="createRectificativa(${inv.id})" style="color:#b45309;">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
           </button>` : ''}
-          <button class="btn btn-ghost btn-sm btn-icon danger" title="Eliminar" onclick="deleteInvoice(${inv.id}, '${escapeHtml(inv.invoice_number).replace(/'/g, "\\'")}')">
+          ${!isVfRegistered(inv) ? `<button class="btn btn-ghost btn-sm btn-icon danger" title="Eliminar" onclick="deleteInvoice(${inv.id}, '${escapeHtml(inv.invoice_number).replace(/'/g, "\\'")}')">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-          </button>
+          </button>` : ''}
         </div>
       </td>
     </tr>
@@ -579,7 +576,7 @@ async function viewInvoice(id) {
 
   openModal('Factura ' + invoice.invoice_number, `
     <div style="display:flex;justify-content:flex-end;margin-bottom:16px;gap:10px;">
-      ${vfEnabled ? `<button class="btn btn-secondary btn-sm" onclick="vfProcessSingle(${id})" title="Calcular huella Verifactu">
+      ${vfEnabled && !isVfRegistered(invoice) ? `<button class="btn btn-secondary btn-sm" onclick="vfProcessSingle(${id})" title="Calcular huella Verifactu">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         ${invoice.huella ? 'Recalcular huella' : 'Calcular huella'}
       </button>` : ''}
@@ -649,7 +646,7 @@ async function deleteInvoice(id, number) {
     });
     await loadInvoices();
   } catch (err) {
-    showToast('Error al eliminar la factura: ' + err.message, 'error');
+    showToast('Error al eliminar la factura: ' + errMsg(err), 'error');
   }
 }
 
@@ -688,13 +685,17 @@ async function bulkDeleteInvoices() {
   if (!confirmed) return;
 
   let deleted = 0;
+  const skipped = [];
   for (const id of ids) {
     try {
       await window.api.invoices.delete(id);
       deleted++;
-    } catch (_) {}
+    } catch (err) {
+      skipped.push(errMsg(err));
+    }
   }
   showToast(`${deleted} factura${deleted !== 1 ? 's' : ''} eliminada${deleted !== 1 ? 's' : ''}`, 'success');
+  if (skipped.length) showToast(`${skipped.length} no se eliminaron: ${skipped[0]}`, 'error');
   selectedInvoiceIds.clear();
   await loadInvoices();
 }
@@ -806,22 +807,29 @@ async function vfProcessSingle(id) {
     closeModal();
     setTimeout(() => viewInvoice(id), 100);
   } catch (err) {
-    showToast('Error: ' + err.message, 'error');
+    showToast('Error: ' + errMsg(err), 'error');
   }
 }
 
 async function vfProcessAll() {
   const invoices = await window.api.invoices.getAll();
-  const pending = invoices.filter(inv => !inv.huella);
+  // Chain records in the order the invoices were created
+  const pending = invoices.filter(inv => !inv.huella).sort((a, b) => a.id - b.id);
   if (pending.length === 0) {
     showToast('Todas las facturas ya tienen huella calculada', 'info');
     return;
   }
   showToast(`Calculando ${pending.length} huellas...`, 'info');
+  let done = 0;
   for (const inv of pending) {
-    await window.api.verifactu.processInvoice(inv.id);
+    try {
+      await window.api.verifactu.processInvoice(inv.id);
+      done++;
+    } catch (err) {
+      showToast(`${inv.invoice_number}: ${errMsg(err)}`, 'error');
+    }
   }
-  showToast(`${pending.length} huellas Verifactu calculadas`, 'success');
+  showToast(`${done} huellas Verifactu calculadas`, 'success');
   await loadInvoices();
 }
 

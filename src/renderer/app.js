@@ -161,6 +161,24 @@ function timeAgo(dtStr) {
   return formatDateTime(dtStr);
 }
 
+// Errors thrown in the main process arrive as "Error invoking remote method 'x': Error: <msg>"
+function errMsg(err) {
+  return String(err && err.message || err).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, '');
+}
+
+// Payment state: 'pendiente' | 'pagada' are stored; "vencida" is derived from the date
+function isInvoiceOverdue(inv, overdueDays = 30) {
+  if (inv.payment_status === 'pagada' || !inv.date) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - overdueDays);
+  return inv.date <= cutoff.toISOString().split('T')[0];
+}
+
+// VeriFactu: a registered record is final (no edits, deletion or new hash)
+function isVfRegistered(inv) {
+  return inv.verifactu_status === 'enviada' || !!inv.verifactu_csv;
+}
+
 function today() {
   return new Date().toISOString().split('T')[0];
 }

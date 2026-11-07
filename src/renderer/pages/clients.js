@@ -343,10 +343,12 @@ async function openClientModal(id = null) {
 }
 
 async function viewClientInvoices(clientId, clientName) {
-  const [invoices, documents] = await Promise.all([
+  const [invoices, documents, numSettings] = await Promise.all([
     window.api.invoices.getByClient(clientId),
-    window.api.documents.getAll()
+    window.api.documents.getAll(),
+    window.api.settings.getNumberSettings()
   ]);
+  const overdueDays = numSettings?.overdue_days ?? 30;
   const clientDocs = documents.filter(d => d.client_id == clientId);
 
   const totalBilled  = invoices.reduce((s, i) => s + (i.total || 0), 0);
@@ -357,7 +359,7 @@ async function viewClientInvoices(clientId, clientName) {
     ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary);">Sin facturas aún</td></tr>`
     : invoices.map(inv => {
         const paid = inv.payment_status === 'pagada';
-        const overdue = !paid && inv.date && inv.date <= (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; })();
+        const overdue = isInvoiceOverdue(inv, overdueDays);
         const badgeCls = paid ? 'badge-paid' : overdue ? 'badge-overdue' : 'badge-pending';
         const badgeLabel = paid ? 'Cobrada' : overdue ? 'Vencida' : 'Pendiente';
         return `<tr>

@@ -462,7 +462,6 @@ async function saveInvoice() {
       invoice = await window.api.invoices.create(invoiceData);
       if (rectificativaOf && rectificativaCounter !== null) {
         await window.api.commitRectificativaNumber(rectificativaCounter);
-        await window.api.invoices.markAsRectified(rectificativaOf);
       } else {
         await window.api.commitInvoiceNumber(pendingCounter);
       }
@@ -490,7 +489,7 @@ async function saveInvoice() {
     navigateTo('invoices');
     setTimeout(() => { viewInvoice(invoice.id); }, 200);
   } catch (err) {
-    showToast('Error al guardar la factura: ' + err.message, 'error');
+    showToast('Error al guardar la factura: ' + errMsg(err), 'error');
     saveBtn.disabled = false;
     saveBtn.innerHTML = `
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

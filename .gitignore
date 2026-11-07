@@ -35,3 +35,7 @@ desktop.ini
 
 # Electron builder cache
 .cache/
+
+# Playwright output
+playwright-report/
+test-results/
