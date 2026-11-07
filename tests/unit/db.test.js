@@ -308,7 +308,8 @@ describe('Settings', () => {
       phone: '900000001',
       logo: '',
       extra_info: 'Info adicional',
-      iban: 'ES0000000000000000000000'
+      iban: 'ES0000000000000000000000',
+      signature: ''
     });
     expect(saved.name).toBe('Mi Empresa Test');
     expect(saved.nif).toBe('B12345678');
@@ -335,7 +336,8 @@ describe('Settings', () => {
       separator: '/',
       show_year: 1,
       digits: 3,
-      start_number: 1
+      start_number: 1,
+      overdue_days: 30
     });
     expect(saved.prefix).toBe('TF');
     expect(saved.separator).toBe('/');
@@ -438,5 +440,78 @@ describe('Verifactu', () => {
     const vf = db.verifactu.getSettings();
     expect(vf.enabled).toBe(0);
     expect(vf.environment).toBe('test');
+  });
+});
+
+// ─── Invoice renumbering ──────────────────────────────────────────────────────
+
+describe('Invoice renumbering', () => {
+  const YEAR = new Date().getFullYear();
+  const PREFIX = `RN${Date.now()}`; // unique per run: the tmp DB can survive between runs
+  const num = n => `${PREFIX}-${YEAR}-${String(n).padStart(3, '0')}`;
+  let clientId;
+  const ids = {};
+
+  const mk = (n, date) => {
+    const inv = db.invoices.create({
+      invoice_number: num(n), client_id: clientId, date, notes: '',
+      subtotal: 10, tax_rate: 0, tax_amount: 0, irpf_rate: 0, irpf_amount: 0, total: 10,
+      items: [{ service_id: null, service_name: 'S', description: '', quantity: 1, unit_price: 10, total: 10 }]
+    });
+    db.settings.updateCounter(n);
+    ids[n] = inv.id;
+  };
+
+  beforeAll(() => {
+    clientId = db.clients.create({ name: 'Renum', nif: '', address: '', email: '', phone: '', notes: '' }).id;
+    db.settings.saveNumberSettings({ prefix: PREFIX, separator: '-', show_year: 1, digits: 3, start_number: 1, overdue_days: 30 });
+    db.settings.resetYearCounter(YEAR);
+    mk(1, `${YEAR}-01-10`);
+    mk(2, `${YEAR}-01-20`);
+    mk(3, `${YEAR}-01-25`);
+    db.invoices.delete(ids[2]); // leaves a gap at 002
+  });
+
+  test('getNumberingGaps detects the deleted number', () => {
+    expect(db.invoices.getNumberingGaps()).toEqual([num(2)]);
+  });
+
+  test('rejects a number already in use', () => {
+    const r = db.invoices.renumber(ids[3], num(1));
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/Ya existe/);
+  });
+
+  test('rejects invoices already registered in VeriFactu', () => {
+    db.verifactu.updateInvoiceVerifactu(ids[1], { huella: 'H', huella_anterior: '', fecha_hora_gen: 'x', verifactu_status: 'enviada', verifactu_csv: 'CSV' });
+    expect(db.invoices.checkRenumber(ids[1], num(9)).ok).toBe(false);
+    db.verifactu.updateInvoiceVerifactu(ids[1], { huella: null, huella_anterior: null, fecha_hora_gen: null, verifactu_status: 'pendiente', verifactu_csv: null });
+  });
+
+  test('warns when dates would be out of order', () => {
+    const inv = db.invoices.getById(ids[3]);
+    db.invoices.create({ invoice_number: PREFIX + 'TMP', client_id: clientId, date: `${YEAR}-01-05`, notes: '', subtotal: 0, tax_rate: 0, tax_amount: 0, irpf_rate: 0, irpf_amount: 0, total: 0, items: [] });
+    const tmp = db.invoices.getAll().find(i => i.invoice_number === PREFIX + 'TMP');
+    const c = db.invoices.checkRenumber(tmp.id, num(2)); // dated before 001
+    expect(c.ok).toBe(true);
+    expect(c.warnings.join(' ')).toMatch(/orden/);
+    db.invoices.delete(tmp.id);
+    expect(db.invoices.checkRenumber(inv.id, num(2)).warnings).toEqual([]);
+  });
+
+  test('moves the last invoice into the gap and pulls the counter back', () => {
+    const r = db.invoices.renumber(ids[3], num(2));
+    expect(r).toEqual({ success: true, oldNumber: num(3), newNumber: num(2) });
+    expect(db.invoices.getById(ids[3]).invoice_number).toBe(num(2));
+    expect(db.settings.getNumberSettings().counter).toBe(2);
+    expect(db.invoices.getNumberingGaps()).toEqual([]);
+    const log = db.activityLog.getRecent(5).find(e => e.action_type === 'factura_renumerada');
+    expect(log.details).toBe(`${num(3)} → ${num(2)}`);
+  });
+
+  test('clears an unsent VeriFactu hash so it gets recalculated', () => {
+    db.verifactu.updateInvoiceVerifactu(ids[3], { huella: 'ABC', huella_anterior: '', fecha_hora_gen: 'x', verifactu_status: 'pendiente', verifactu_csv: null });
+    expect(db.invoices.renumber(ids[3], num(5)).success).toBe(true);
+    expect(db.invoices.getById(ids[3]).huella).toBeNull();
   });
 });

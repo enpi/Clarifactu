@@ -617,6 +617,7 @@ select.form-control {
 
 .confirm-dialog p {
   color: var(--text-secondary);
+  white-space: pre-line;
   font-size: 13.5px;
   margin-bottom: 24px;
 }

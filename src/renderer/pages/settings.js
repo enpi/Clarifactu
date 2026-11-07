@@ -198,6 +198,28 @@ async function renderSettings(container) {
         </div>
       </div>
 
+      <div class="card" style="margin-top:20px;">
+        <div class="card-header"><span class="card-title">Renumerar factura</span></div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;">
+            Cambia el número de una factura, por ejemplo para cubrir el hueco que deja una factura eliminada.
+            No se permite usar un número existente ni renumerar facturas ya registradas en VeriFactu.
+          </p>
+          <div id="renumber-gaps" style="font-size:13px;margin-bottom:14px;"></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Factura</label>
+              <select class="form-control" id="renumber-invoice"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Nuevo número</label>
+              <input type="text" class="form-control" id="renumber-new" placeholder="F-2026-0007">
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="renumber-btn">Renumerar</button>
+        </div>
+      </div>
+
       <div class="card" style="margin-top:20px;border-color:#fee2e2;">
         <div class="card-header" style="background:#fff5f5;">
           <span class="card-title" style="color:#dc2626;">Zona de riesgo</span>
@@ -1116,6 +1138,9 @@ async function renderSettings(container) {
     // If success, app is relaunching
   });
 
+  // Renumber invoice
+  initRenumberCard();
+
   // Reset counter
   document.getElementById('reset-counter-btn').addEventListener('click', async () => {
     const confirmed = await showConfirm(
@@ -1135,6 +1160,57 @@ async function renderSettings(container) {
       }
     }
   });
+}
+
+async function initRenumberCard() {
+  const select = document.getElementById('renumber-invoice');
+  const input = document.getElementById('renumber-new');
+  const gapsEl = document.getElementById('renumber-gaps');
+
+  async function refresh() {
+    const [list, gaps] = await Promise.all([
+      window.api.invoices.getAll(),
+      window.api.invoices.getNumberingGaps(),
+    ]);
+    // Most recently created first: usually the one you want to move into the gap
+    const sorted = [...list].sort((a, b) => b.id - a.id);
+    select.innerHTML = sorted.map(inv => `
+      <option value="${inv.id}">${escapeHtml(inv.invoice_number)} · ${escapeHtml(inv.date)} · ${escapeHtml(inv.client_name || 'Sin cliente')}</option>
+    `).join('');
+    input.value = gaps[0] || '';
+    gapsEl.innerHTML = gaps.length
+      ? `<span style="color:var(--text-secondary);">Huecos en la numeración:</span> ` +
+        gaps.map(g => `<button type="button" class="btn btn-secondary btn-sm renumber-gap" data-num="${escapeHtml(g)}" style="margin:2px 4px 2px 0;">${escapeHtml(g)}</button>`).join('')
+      : `<span style="color:var(--text-secondary);">No hay huecos en la numeración de este año.</span>`;
+    gapsEl.querySelectorAll('.renumber-gap').forEach(btn =>
+      btn.addEventListener('click', () => { input.value = btn.dataset.num; }));
+  }
+
+  document.getElementById('renumber-btn').addEventListener('click', async () => {
+    const id = parseInt(select.value);
+    if (!id) return showToast('No hay facturas para renumerar.', 'error');
+    try {
+      const check = await window.api.invoices.checkRenumber(id, input.value);
+      if (!check.ok) return showToast(check.error, 'error');
+
+      const warnings = check.warnings.length ? '\n\nAtención:\n• ' + check.warnings.join('\n• ') : '';
+      const confirmed = await showConfirm(
+        '¿Renumerar factura?',
+        `${check.oldNumber}  →  ${check.newNumber}${warnings}\n\nSe recomienda crear un backup antes.`,
+        'Renumerar'
+      );
+      if (!confirmed) return;
+
+      const result = await window.api.invoices.renumber(id, input.value);
+      if (!result.success) return showToast(result.error, 'error');
+      showToast(`Factura ${result.oldNumber} renumerada a ${result.newNumber}.`, 'success');
+      await refresh();
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  });
+
+  await refresh();
 }
 
 function generatePreviewNumber(settings) {

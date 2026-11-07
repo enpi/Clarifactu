@@ -350,9 +350,118 @@ const services = {
   }
 };
 
+// ─── Invoice numbering helpers ────────────────────────────────────────────────
+
+// Mirrors the format used by the generateInvoiceNumber IPC handler in main.js.
+function numberPrefix(s, year) {
+  return s.show_year
+    ? `${s.prefix}${s.separator}${year}${s.separator}`
+    : `${s.prefix}${s.separator}`;
+}
+
+function formatInvoiceNumber(s, year, n) {
+  return numberPrefix(s, year) + String(n).padStart(s.digits, '0');
+}
+
+// Returns the sequence number if `number` follows the current series, else null.
+function parseSequence(s, year, number) {
+  const prefix = numberPrefix(s, year);
+  if (!number.startsWith(prefix)) return null;
+  const rest = number.slice(prefix.length);
+  return /^\d+$/.test(rest) ? parseInt(rest, 10) : null;
+}
+
+function invoiceNumberExists(number, excludeId = null) {
+  return !!db.prepare('SELECT 1 FROM invoices WHERE invoice_number = ? AND id IS NOT ?').get(number, excludeId);
+}
+
+// Validates a renumbering without touching anything. Errors block, warnings need confirmation.
+function checkRenumber(id, newNumber) {
+  const num = String(newNumber || '').trim();
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+  if (!inv) return { ok: false, error: 'La factura no existe.' };
+  if (!num) return { ok: false, error: 'El nuevo número no puede estar vacío.' };
+  if (num === inv.invoice_number) return { ok: false, error: 'La factura ya tiene ese número.' };
+  if (invoiceNumberExists(num, id)) return { ok: false, error: `Ya existe una factura con el número ${num}.` };
+  if (inv.verifactu_status === 'enviada' || inv.verifactu_csv) {
+    return { ok: false, error: 'Esta factura ya está registrada en VeriFactu (AEAT) y no se puede renumerar.' };
+  }
+  if (inv.huella && db.prepare('SELECT 1 FROM invoices WHERE huella_anterior = ? AND id != ?').get(inv.huella, id)) {
+    return { ok: false, error: 'La huella VeriFactu de esta factura ya está encadenada con otra posterior; renumerarla rompería la cadena.' };
+  }
+
+  const warnings = [];
+  const s = db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
+  const year = String(inv.date || '').slice(0, 4) || s.current_year;
+  const seq = parseSequence(s, year, num);
+  if (seq !== null) {
+    const prev = db.prepare('SELECT invoice_number, date FROM invoices WHERE invoice_number = ?').get(formatInvoiceNumber(s, year, seq - 1));
+    const next = db.prepare('SELECT invoice_number, date FROM invoices WHERE invoice_number = ?').get(formatInvoiceNumber(s, year, seq + 1));
+    if ((prev && prev.date > inv.date) || (next && next.date < inv.date)) {
+      warnings.push(`La fecha de la factura (${inv.date}) no queda en orden con sus vecinas` +
+        `${prev ? ` (${prev.invoice_number}: ${prev.date})` : ''}${next ? ` (${next.invoice_number}: ${next.date})` : ''}.` +
+        ' La numeración debe ser correlativa también en fechas.');
+    }
+  } else {
+    warnings.push('El nuevo número no sigue el formato de numeración configurado.');
+  }
+  if (inv.email_sent_at) warnings.push('Esta factura ya se envió por email con el número antiguo; el cliente tendrá una copia con ese número.');
+  if (inv.huella) warnings.push('Se borrará su huella VeriFactu (aún no enviada) y habrá que recalcularla.');
+
+  return { ok: true, invoice: inv, newNumber: num, warnings };
+}
+
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 const invoices = {
+  checkRenumber(id, newNumber) {
+    const { invoice, ...rest } = checkRenumber(id, newNumber);
+    return invoice ? { ...rest, oldNumber: invoice.invoice_number } : rest;
+  },
+  renumber(id, newNumber) {
+    const tx = db.transaction(() => {
+      const check = checkRenumber(id, newNumber);
+      if (!check.ok) return { success: false, error: check.error };
+      const inv = check.invoice;
+      const oldNumber = inv.invoice_number;
+      const num = check.newNumber;
+
+      db.prepare('UPDATE invoices SET invoice_number = ? WHERE id = ?').run(num, id);
+      if (inv.huella) {
+        db.prepare(`UPDATE invoices SET huella = NULL, huella_anterior = NULL, fecha_hora_gen = NULL,
+          verifactu_status = 'pendiente', verifactu_csv = NULL WHERE id = ?`).run(id);
+      }
+
+      // If the moved invoice was the last one issued, pull the counter back so the
+      // next invoice reuses the freed number instead of opening a new gap.
+      const s = db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
+      if (oldNumber === formatInvoiceNumber(s, s.current_year, s.counter)) {
+        const floor = Math.max((s.start_number || 1) - 1, 0);
+        let c = s.counter;
+        while (c > floor && !invoiceNumberExists(formatInvoiceNumber(s, s.current_year, c))) c--;
+        db.prepare('UPDATE invoice_number_settings SET counter = ? WHERE id = 1').run(c);
+      }
+
+      const client = inv.client_id ? db.prepare('SELECT name FROM clients WHERE id = ?').get(inv.client_id) : null;
+      activityLog.add({
+        action_type: 'factura_renumerada', invoice_id: id, invoice_number: num,
+        client_name: client ? client.name : null, details: `${oldNumber} → ${num}`
+      });
+      return { success: true, oldNumber, newNumber: num };
+    });
+    return tx();
+  },
+  // Numbers missing from the current year's series (e.g. after deleting an invoice).
+  getNumberingGaps() {
+    const s = db.prepare('SELECT * FROM invoice_number_settings WHERE id = 1').get();
+    const floor = Math.max((s.start_number || 1) - 1, 0);
+    const gaps = [];
+    for (let n = floor + 1; n <= s.counter; n++) {
+      const num = formatInvoiceNumber(s, s.current_year, n);
+      if (!invoiceNumberExists(num)) gaps.push(num);
+    }
+    return gaps;
+  },
   getAll() {
     return db.prepare(`
       SELECT i.*, c.name as client_name, c.email as client_email
