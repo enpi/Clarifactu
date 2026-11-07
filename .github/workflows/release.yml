@@ -1,0 +1,81 @@
+name: Release
+
+# Every push to master publishes a new version:
+#   - If package.json's version has no tag yet (you bumped it by hand, e.g. to a
+#     new minor), that version is released as-is.
+#   - Otherwise the patch number is bumped automatically (1.2.2 -> 1.2.3).
+# The bump is committed back to master and tagged, then the Windows installers
+# are built and published as a GitHub Release (where the auto-updater finds them).
+#
+# Pushes that only touch docs are ignored. Add [skip ci] to a commit message to
+# push without releasing. After each release run `git pull` to get the bump commit.
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'tasks/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time, never cancel a half-published one
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Unit tests run under plain Node, so they must go before the Electron rebuild
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Decide version
+        id: version
+        run: |
+          CURRENT="$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/v$CURRENT" >/dev/null; then
+            npm version patch --no-git-tag-version >/dev/null
+          fi
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION"
+
+      - name: Commit and tag version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- package.json package-lock.json; then
+            git commit -m "chore: release v${{ steps.version.outputs.version }} [skip ci]" -- package.json package-lock.json
+          fi
+          git pull --rebase origin master
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin HEAD:master "v${{ steps.version.outputs.version }}"
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
+
+      - name: Build and publish release
+        run: npm run publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
