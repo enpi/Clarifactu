@@ -1,4 +1,6 @@
-# Clarifactu · v1.2.0
+# Clarifactu
+
+[![Última versión](https://img.shields.io/github/v/release/enpi/Clarifactu)](https://github.com/enpi/Clarifactu/releases/latest)
 
 Aplicación de escritorio para gestión de facturación orientada a profesionales de terapia y otros autónomos. Funciona completamente offline, sin suscripciones ni servicios en la nube.
 
@@ -34,6 +36,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Creación de facturas con líneas de servicio ilimitadas
 - Numeración automática configurable (prefijo, separador, año, dígitos)
 - Reinicio manual del contador de numeración
+- **Renumeración segura** de facturas para cubrir huecos (p. ej. tras eliminar una factura)
 - IVA e IRPF configurables por factura
 - Vista previa de la factura antes de exportar
 - Exportación a **PDF** (mediante ventana oculta de Electron)
@@ -79,6 +82,8 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Filtros por año, categoría y trimestre
 - Badges de colores por categoría en la tabla
 - Totales (base, IVA, importe deducible) calculados en tiempo real para el filtro activo
+- **Categoría sugerida automáticamente** a partir de la descripción (por palabras clave), con chip descartable que indica la categoría y la casilla del Modelo 100
+- Casilla del **Modelo 100** visible bajo el selector de categoría (las primas de seguros van en su propia línea, separadas de otros servicios exteriores)
 
 ### Dashboard
 - Resumen del año: facturado, nº facturas, clientes, servicios, documentos totales y documentos enviados este mes
@@ -90,10 +95,11 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Selector de año para navegar el historial
 - Últimas facturas emitidas
 - **Registro de actividad reciente** (últimas 25 acciones)
-- **Resumen fiscal trimestral** con tres pestañas:
+- **Resumen fiscal trimestral** con cuatro pestañas:
   - **Ingresos / Gastos**: base imponible, gastos deducibles, resultado neto e IVA neto por trimestre
   - **Modelo 130**: casillas C.01 (ingresos), C.02 (gastos deducibles), C.03 (diferencia), C.04 (20% × C.03), C.05 (retenciones IRPF), C.06 (resultado a ingresar) — coloreado en verde/rojo
   - **Modelo 303**: IVA repercutido, IVA soportado deducible y resultado a ingresar/compensar
+  - **Modelo 100 / Renta**: gastos agrupados por casilla del Modelo 100 con totales anuales
 - **Exportación del resumen fiscal** a CSV o a **Excel con casillas por modelo** (hojas: Modelo 130, Modelo 303, Renta-Gastos por categoría)
 
 ### Búsqueda global
@@ -110,7 +116,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - **?** — mostrar ayuda de atajos
 
 ### Registro de actividad
-- Historial de las últimas acciones: facturas creadas, emails enviados, PDFs exportados, facturas eliminadas
+- Historial de las últimas acciones: facturas creadas, emails enviados, PDFs exportados, facturas eliminadas y renumeradas (número antiguo → nuevo)
 - Límite automático de 500 entradas para no crecer indefinidamente
 - Visible en el dashboard con marcas de tiempo relativas
 
@@ -158,6 +164,10 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Formato del número: prefijo, separador, año, nº de dígitos, número inicial
 - Vista previa del número en tiempo real
 - Reinicio del contador de numeración
+- **Renumerar factura**: muestra los huecos de la numeración del año y permite mover una factura a uno de ellos
+  - Bloquea números ya en uso, facturas registradas en Verifactu y huellas ya encadenadas con otra factura
+  - Avisa antes de confirmar si la fecha queda fuera de orden, si el número no sigue el formato, si la factura ya se envió por email o si hay que recalcular su huella
+  - Si se mueve la última factura, el contador retrocede para que la siguiente reutilice el número liberado
 - **Días de vencimiento** configurables (por defecto 30) para el estado "Vencida"
 
 #### Email
@@ -239,13 +249,33 @@ npm run icon
 # Generar instalador NSIS + ejecutable portable (.exe)
 npm run build
 
-# Publicar nueva versión en GitHub Releases
+# Publicar manualmente en GitHub Releases (normalmente lo hace el CI, ver abajo)
 GH_TOKEN=<tu_token> npm run publish
 ```
 
+### Publicación de versiones (CI)
+
+Cada push a `master` publica automáticamente una nueva versión mediante GitHub Actions (`.github/workflows/release.yml`):
+
+1. Instala dependencias y ejecuta los tests unitarios (si fallan, no se publica nada)
+2. Sube el número de parche (`1.2.3` → `1.2.4`). Si `package.json` ya tiene una versión sin etiqueta (p. ej. subida a mano a `1.3.0`), se usa esa
+3. Hace commit del cambio de versión (`chore: release vX [skip ci]`), crea la etiqueta y la sube
+4. Genera el instalador NSIS y el portable y los publica en **GitHub Releases**, desde donde los recoge el actualizador automático
+
+Notas:
+- Tras cada push, haz `git pull` para traer el commit de versión del CI
+- Añade `[skip ci]` al mensaje del commit para subir cambios sin publicar versión
+- Los cambios que solo tocan ficheros `.md`, `docs/` o `tasks/` no generan versión
+- También se puede lanzar a mano desde la pestaña *Actions* (*Run workflow*)
+
 ### Tests
 
+Los tests usan una copia de `better-sqlite3` compilada para Node (la de la raíz está compilada para Electron), instalada en `tests/`:
+
 ```bash
+# Instalar dependencias de los tests (una vez)
+npm ci --prefix tests
+
 # Tests unitarios (DB, Verifactu, utilidades)
 npx jest tests/unit --verbose
 
@@ -259,6 +289,8 @@ npx jest tests/integration --testTimeout=20000 --verbose
 
 ```
 Clarifactu/
+├── .github/workflows/
+│   └── release.yml          # Publicación automática de versiones
 ├── main.js                  # Proceso principal Electron + handlers IPC
 ├── preload.js               # contextBridge → window.api
 ├── assets/
@@ -287,6 +319,7 @@ Clarifactu/
 │           ├── onboarding.js
 │           └── settings.js
 ├── tests/
+│   ├── package.json         # better-sqlite3 para Node (usado por Jest)
 │   ├── unit/
 │   │   ├── db.test.js
 │   │   ├── verifactu.test.js
