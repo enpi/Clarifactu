@@ -33,18 +33,22 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: master
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      # Unit tests use a Node-ABI copy of better-sqlite3 (see jest.config.js)
+      - name: Install test dependencies
+        run: npm install --prefix tests --no-audit --no-fund
 
       # Unit tests run under plain Node, so they must go before the Electron rebuild
       - name: Unit tests
