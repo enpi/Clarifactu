@@ -48,7 +48,7 @@ jobs:
 
       # Unit tests use a Node-ABI copy of better-sqlite3 (see jest.config.js)
       - name: Install test dependencies
-        run: npm install --prefix tests --no-audit --no-fund
+        run: npm ci --prefix tests --no-audit --no-fund
 
       # Unit tests run under plain Node, so they must go before the Electron rebuild
       - name: Unit tests
@@ -72,7 +72,7 @@ jobs:
           if ! git diff --quiet -- package.json package-lock.json; then
             git commit -m "chore: release v${{ steps.version.outputs.version }} [skip ci]" -- package.json package-lock.json
           fi
-          git pull --rebase origin master
+          git pull --rebase --autostash origin master
           git tag "v${{ steps.version.outputs.version }}"
           git push origin HEAD:master "v${{ steps.version.outputs.version }}"
 
