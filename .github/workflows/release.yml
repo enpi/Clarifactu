@@ -40,17 +40,18 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 20  # better-sqlite3 9.x ships no prebuilt binaries for newer Node
+          node-version: 24  # same Node as Electron 45; better-sqlite3 13 needs >= 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      # Unit tests use a Node-ABI copy of better-sqlite3 (see jest.config.js)
-      - name: Install test dependencies
-        run: npm ci --prefix tests --no-audit --no-fund
+      # Never ship a release with a known high or critical vulnerability (Electron itself
+      # is a devDependency but ends up inside the installer, so the whole tree is checked)
+      - name: Security audit
+        run: npm audit --audit-level=high
 
-      # Unit tests run under plain Node, so they must go before the Electron rebuild
+      # better-sqlite3 13 is Node-API: the same binary runs in Node (tests) and Electron (app)
       - name: Unit tests
         run: npm run test:unit
 
@@ -75,9 +76,6 @@ jobs:
           git pull --rebase --autostash origin master
           git tag "v${{ steps.version.outputs.version }}"
           git push origin HEAD:master "v${{ steps.version.outputs.version }}"
-
-      - name: Rebuild native modules for Electron
-        run: npm run rebuild
 
       - name: Build and publish release
         run: npm run publish

@@ -8,8 +8,8 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 
 ## Tecnología
 
-- **Electron 29** — aplicación de escritorio multiplataforma
-- **SQLite** (better-sqlite3) — base de datos local, sin servidor
+- **Electron 45** — aplicación de escritorio multiplataforma
+- **SQLite** (better-sqlite3 13, sobre Node-API: el mismo binario funciona en Node y en Electron, sin recompilar) — base de datos local, sin servidor
 - **Vanilla JS / HTML / CSS** — sin frameworks frontend
 - **Chart.js** — gráficos del dashboard
 - **AdmZip** — exportación de múltiples PDFs en ZIP
@@ -248,9 +248,6 @@ El documento generado incluye:
 # Instalar dependencias
 npm install
 
-# Reconstruir módulos nativos para Electron
-npm run rebuild
-
 # Iniciar en modo desarrollo (con DevTools)
 npm run dev
 
@@ -271,7 +268,7 @@ GH_TOKEN=<tu_token> npm run publish
 
 Cada push a `master` publica automáticamente una nueva versión mediante GitHub Actions (`.github/workflows/release.yml`):
 
-1. Instala dependencias y ejecuta los tests unitarios (si fallan, no se publica nada)
+1. Instala dependencias, pasa una **auditoría de seguridad** (`npm audit --audit-level=high`: cualquier vulnerabilidad alta o crítica bloquea la publicación) y ejecuta los tests unitarios (si fallan, no se publica nada)
 2. Sube el número de parche (`1.2.3` → `1.2.4`). Si `package.json` ya tiene una versión sin etiqueta (p. ej. subida a mano a `1.3.0`), se usa esa
 3. Hace commit del cambio de versión (`chore: release vX [skip ci]`), crea la etiqueta y la sube
 4. Genera el instalador NSIS y el portable y los publica en **GitHub Releases**, desde donde los recoge el actualizador automático
@@ -284,12 +281,7 @@ Notas:
 
 ### Tests
 
-Los tests usan una copia de `better-sqlite3` compilada para Node (la de la raíz está compilada para Electron), instalada en `tests/`:
-
 ```bash
-# Instalar dependencias de los tests (una vez)
-npm ci --prefix tests
-
 # Tests unitarios (DB, Verifactu, backups, informes fiscales, importación, utilidades)
 npx jest tests/unit --verbose
 
@@ -342,7 +334,6 @@ Clarifactu/
 │           ├── onboarding.js
 │           └── settings.js
 ├── tests/
-│   ├── package.json         # better-sqlite3 para Node (usado por Jest)
 │   ├── unit/
 │   │   ├── db.test.js
 │   │   ├── fresh-db.test.js       # Base de datos nueva (primer arranque)

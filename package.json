@@ -6,7 +6,6 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "rebuild": "electron-rebuild -f -w better-sqlite3",
     "icon": "electron scripts/generate-icon.js",
     "png-to-ico": "electron scripts/png-to-ico.js",
     "build": "electron-builder",
@@ -45,8 +44,7 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "signAndEditExecutable": false,
-      "sign": null
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
@@ -62,7 +60,6 @@
       "node_modules/**/*",
       "!node_modules/electron/**/*",
       "!node_modules/electron-builder/**/*",
-      "!node_modules/@electron/rebuild/**/*",
       "!node_modules/@playwright/**/*",
       "!node_modules/playwright/**/*",
       "!node_modules/playwright-core/**/*",
@@ -73,28 +70,32 @@
       "!node_modules/app-builder-bin/**/*",
       "!node_modules/7zip-bin/**/*",
       "!node_modules/node-gyp/**/*",
-      "!node_modules/.cache/**/*"
+      "!node_modules/.cache/**/*",
+      "!node_modules/better-sqlite3/{src,deps}/**/*",
+      "!node_modules/better-sqlite3/prebuilds/{darwin-*,linux-*,linuxmusl-*,win32-arm64}.node"
     ]
   },
   "dependencies": {
     "adm-zip": "^0.6.1",
-    "better-sqlite3": "^9.4.3",
+    "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.3",
     "nodemailer": "^10.4.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.2.1",
     "@playwright/test": "^1.58.2",
     "chart.js": "^4.5.1",
-    "electron": "^29.4.6",
-    "electron-builder": "^24.9.1",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "jest": "^30.5.2"
   },
   "overrides": {
     "jest": {
       "glob": "^14.0.4",
       "minimatch": "^11.0.5"
+    },
+    "electron-builder": {
+      "minimatch@>=7.0.0 <11.0.1": "^11.0.5"
     }
   }
 }
