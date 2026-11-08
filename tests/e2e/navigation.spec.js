@@ -17,7 +17,7 @@ test.describe('App navigation', () => {
 
   test('sidebar contains all expected nav items', async ({ window }) => {
     const navItems = window.locator('.nav-item');
-    await expect(navItems).toHaveCount(6);
+    await expect(navItems).toHaveCount(8);
 
     const labels = await navItems.locator('.nav-label').allTextContents();
     expect(labels).toContain('Dashboard');
@@ -25,6 +25,8 @@ test.describe('App navigation', () => {
     expect(labels).toContain('Servicios');
     expect(labels).toContain('Nueva Factura');
     expect(labels).toContain('Facturas');
+    expect(labels).toContain('Gastos');
+    expect(labels).toContain('Documentos');
     expect(labels).toContain('Configuración');
   });
 

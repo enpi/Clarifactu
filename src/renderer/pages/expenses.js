@@ -191,6 +191,9 @@ function renderExpensesTable() {
           <button class="btn btn-ghost btn-sm btn-icon" title="Editar" onclick="openExpenseModal(${e.id})">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
+          <button class="btn btn-ghost btn-sm btn-icon" title="Duplicar gasto" onclick="duplicateExpense(${e.id})">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
           <button class="btn btn-ghost btn-sm btn-icon danger" title="Eliminar" onclick="deleteExpense(${e.id})">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
@@ -216,7 +219,12 @@ function openExpenseDoc(fileName) {
   window.api.expenses.openDoc(fileName);
 }
 
-async function openExpenseModal(id = null) {
+// Opens the form as a new expense pre-filled from another one (e.g. a monthly bill)
+function duplicateExpense(id) {
+  return openExpenseModal(null, { duplicateOf: id });
+}
+
+async function openExpenseModal(id = null, { duplicateOf = null } = {}) {
   expenseEditingId = id;
   expensePendingDoc = null;
   expenseOriginalDoc = null;
@@ -225,9 +233,14 @@ async function openExpenseModal(id = null) {
   if (id) {
     expense = await window.api.expenses.getById(id);
     expenseOriginalDoc = expense.pdf_file || null;
+  } else if (duplicateOf) {
+    const src = await window.api.expenses.getById(duplicateOf);
+    // Today's date, and not the supplier's invoice number nor the attached file: those belong
+    // to the original (deleting an expense deletes its file, so they must not be shared)
+    expense = { ...src, id: undefined, date: new Date().toISOString().slice(0, 10), invoice_number: '', pdf_file: '' };
   }
 
-  const title = id ? 'Editar gasto' : 'Nuevo gasto';
+  const title = id ? 'Editar gasto' : duplicateOf ? 'Duplicar gasto' : 'Nuevo gasto';
   const v = expense || {};
 
   const categoryOptions = Object.entries(EXPENSE_CATEGORIES).map(([k, cat]) =>

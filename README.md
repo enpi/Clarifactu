@@ -24,6 +24,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - **Etiquetas / categorías**: asigna etiquetas de color libres a cada cliente; filtro por etiqueta mediante desplegable en la barra de búsqueda
 - Búsqueda en tiempo real por nombre, NIF o email (filtrado local)
 - **Paginación** (20 por página) con filtros activos
+- **Importación desde CSV o Excel (.xlsx)**: reconoce las cabeceras habituales (Nombre, NIF/DNI, Email, Teléfono, Dirección, Notas, Etiquetas, Fecha de nacimiento), acepta `;` o `,` como separador y muestra una vista previa antes de importar; omite filas sin nombre y clientes repetidos (mismo NIF o email, ya existentes o dentro del propio archivo)
 - **Historial del cliente**: modal con pestañas de Facturas (con resumen de total facturado, cobrado y pendiente) y Documentos; exportación de todas las facturas del cliente en un único ZIP
 
 ### Servicios
@@ -38,6 +39,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Reinicio manual del contador de numeración
 - **Renumeración segura** de facturas para cubrir huecos (p. ej. tras eliminar una factura)
 - IVA e IRPF configurables por factura
+- **Mención de exención de IVA** en las facturas con IVA 0 % (por defecto, art. 20.Uno.3º de la Ley 37/1992; texto editable)
 - Vista previa de la factura antes de exportar
 - Exportación a **PDF** (mediante ventana oculta de Electron)
 - **Envío por email** directamente desde la aplicación (Gmail)
@@ -54,12 +56,14 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 
 #### Selección múltiple y acciones en grupo
 - **Checkbox** por fila + "seleccionar todo" en cabecera (con estado indeterminado)
-- **Barra de acciones** que aparece al seleccionar una o más facturas
+- **Barra de acciones** que aparece al seleccionar una o más facturas, con la **suma de lo facturado** en las seleccionadas (total y base imponible)
+- **Recordatorios de cobro en grupo**: se envían solo a las seleccionadas que estén vencidas
 - **Envío masivo de emails**: confirmación previa, envío individual silencioso, omite clientes sin email
 - **Descarga masiva de PDFs**: genera un único archivo `.zip` con todos los PDFs seleccionados
 - **Eliminación múltiple**: confirmación única para borrar el lote
 
 #### Estado de cobro
+- **Recordatorio de cobro** por email en las facturas vencidas, con la factura adjunta y plantilla propia; la lista muestra cuándo se envió el último
 - Cada factura tiene estado: **Pendiente**, **Cobrada** o **Vencida**
 - Días para considerar una factura vencida configurable en Ajustes (por defecto 30)
 - Botón de toggle directo en la tabla para marcar/desmarcar como cobrada
@@ -75,6 +79,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 ### Gastos
 
 - Alta, edición y eliminación de gastos deducibles
+- **Duplicar gasto** (útil para gastos que se repiten, como el alquiler o la cuota mensual): copia los datos con la fecha de hoy, sin el nº de factura del proveedor ni el documento adjunto
 - **13 categorías fiscales** mapeadas a la Declaración de la Renta (E. Directa): cuotas autónomo, arrendamientos, suministros, servicios profesionales, material de oficina, formación, seguros, publicidad, reparaciones, gastos financieros, amortizaciones, tributos y otros
 - Campos por gasto: fecha, categoría, descripción, proveedor, NIF proveedor, nº factura proveedor, base imponible, IVA (0%/4%/10%/21%), % deducible y notas
 - **% Deducible**: indicador informativo detallado con los porcentajes según el LIRPF (100% para SS, mixto para suministros/arrendamiento, gastos de transporte y manutención según baremo oficial)
@@ -100,7 +105,10 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
   - **Modelo 130**: casillas C.01 (ingresos), C.02 (gastos deducibles), C.03 (diferencia), C.04 (20% × C.03), C.05 (retenciones IRPF), C.06 (resultado a ingresar) — coloreado en verde/rojo
   - **Modelo 303**: IVA repercutido, IVA soportado deducible y resultado a ingresar/compensar
   - **Modelo 100 / Renta**: gastos agrupados por casilla del Modelo 100 con totales anuales
+  - **Modelo 347**: clientes y proveedores con más de 3.005,06 € (IVA incluido) en el año, con desglose trimestral; agrupa por NIF, avisa de los que no tienen NIF y de los alquileres, y excluye las facturas con retención de IRPF (van en el modelo 190) y las cuotas de Seguridad Social y tributos
 - **Exportación del resumen fiscal** a CSV o a **Excel con casillas por modelo** (hojas: Modelo 130, Modelo 303, Renta-Gastos por categoría)
+- **Libros registro** de ingresos y de gastos (IRPF, estimación directa) en Excel, con los datos de cada factura emitida y cada gasto. Sigue el contenido de los libros registro, pero no es la plantilla oficial de importación de la AEAT
+- **Modelo 347** exportable a Excel (hojas de clientes y proveedores)
 
 ### Búsqueda global
 - Acceso con **Ctrl+K** desde cualquier pantalla
@@ -116,7 +124,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - **?** — mostrar ayuda de atajos
 
 ### Registro de actividad
-- Historial de las últimas acciones: facturas creadas, emails enviados, PDFs exportados, facturas eliminadas y renumeradas (número antiguo → nuevo)
+- Historial de las últimas acciones: facturas creadas, emails enviados, PDFs exportados, facturas eliminadas y renumeradas (número antiguo → nuevo) y recordatorios de cobro
 - Límite automático de 500 entradas para no crecer indefinidamente
 - Visible en el dashboard con marcas de tiempo relativas
 
@@ -169,18 +177,24 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
   - Avisa antes de confirmar si la fecha queda fuera de orden, si el número no sigue el formato, si la factura ya se envió por email o si hay que recalcular su huella
   - Si se mueve la última factura, el contador retrocede para que la siguiente reutilice el número liberado
 - **Días de vencimiento** configurables (por defecto 30) para el estado "Vencida"
+- **Exención de IVA**: activar/desactivar la mención y editar su texto
 
 #### Email
 - Integración con **Gmail** mediante contraseña de aplicación
 - Asunto y cuerpo del email personalizables con variables: `{numero}`, `{cliente}`, `{total}`, `{fecha}`
+- Plantilla del **recordatorio de cobro**, con la variable adicional `{dias}` (días desde la fecha de la factura)
 - Botón de prueba de conexión
 
 #### Backup
+- Cada backup es un `.zip` con la base de datos y las **facturas de proveedor** adjuntas a los gastos
+- Copia consistente mediante la API de backup de SQLite (incluye los cambios aún en el fichero `-wal`)
+- **Backup automático diario** al abrir la aplicación (activable)
+- **Copia adicional en otra carpeta** (por ejemplo, Google Drive u OneDrive), donde también se guardan los 5 últimos
 - Creación de copia de seguridad con un clic
 - Registro de los **5 backups más recientes** (los anteriores se eliminan automáticamente)
 - Descarga del backup a cualquier ubicación
-- Restauración de un backup anterior (con aviso de confirmación y reinicio automático)
-- Importación de un backup externo (archivo `.db`)
+- Restauración de un backup anterior (con aviso de confirmación y reinicio automático). Antes de restaurar se guarda un backup de los datos actuales
+- Importación de un backup externo (`.zip`, o `.db` de versiones anteriores); el archivo se valida antes de tocar nada
 
 #### Avanzado — Verifactu (AEAT)
 - Cumplimiento del **RD 1007/2023** (Verifactu), activable/desactivable
@@ -276,12 +290,17 @@ Los tests usan una copia de `better-sqlite3` compilada para Node (la de la raíz
 # Instalar dependencias de los tests (una vez)
 npm ci --prefix tests
 
-# Tests unitarios (DB, Verifactu, utilidades)
+# Tests unitarios (DB, Verifactu, backups, informes fiscales, importación, utilidades)
 npx jest tests/unit --verbose
 
 # Test de integración con endpoint AEAT (requiere red)
 npx jest tests/integration --testTimeout=20000 --verbose
+
+# Tests e2e con Playwright sobre la app real
+npx playwright test
 ```
+
+Los tests e2e arrancan la app con su propia carpeta de datos temporal (variable `CLARIFACTU_USER_DATA`) y una licencia de prueba, y con la ventana oculta (`CLARIFACTU_HIDE_WINDOW=1`): no tocan tus datos reales ni abren ventanas.
 
 ---
 
@@ -300,6 +319,10 @@ Clarifactu/
 │   ├── generate-key.js      # Generador de claves de licencia
 │   └── generate-icon.js     # Generador del icono de la aplicación
 ├── src/
+│   ├── backup.js            # Backups (.zip con base de datos y facturas de proveedor)
+│   ├── import-clients.js    # Importación de clientes desde CSV / Excel
+│   ├── spreadsheet.js       # Exportación a Excel (libros registro, 347…)
+│   ├── verifactu.js         # Huella, XML y QR de Verifactu
 │   ├── license.html         # Pantalla de activación de licencia
 │   ├── license-preload.js   # Preload para la ventana de licencia
 │   ├── database/
@@ -322,10 +345,16 @@ Clarifactu/
 │   ├── package.json         # better-sqlite3 para Node (usado por Jest)
 │   ├── unit/
 │   │   ├── db.test.js
+│   │   ├── fresh-db.test.js       # Base de datos nueva (primer arranque)
+│   │   ├── backup.test.js
+│   │   ├── fiscal.test.js
+│   │   ├── import-clients.test.js
 │   │   ├── verifactu.test.js
 │   │   └── utils.test.js
-│   └── integration/
-│       └── verifactu-submission.test.js
+│   ├── integration/
+│   │   └── verifactu-submission.test.js
+│   └── e2e/                       # Playwright sobre la app real
+│       └── fixtures.js            # Carpeta de datos temporal + licencia de prueba
 └── dist/                    # Ejecutable generado
 ```
 
@@ -344,7 +373,7 @@ Las migraciones se aplican automáticamente en cada arranque, por lo que actuali
 - La aplicación funciona **100% offline**. Ningún dato sale del equipo salvo el envío voluntario de facturas a la AEAT (Verifactu) o por email.
 - El logo y la firma se almacenan como base64 en la base de datos.
 - El contador de facturas (y el de rectificativas) se reinicia automáticamente cada año nuevo.
-- Los backups son copias exactas del archivo `.db` y pueden restaurarse en cualquier instalación de Clarifactu.
+- Los backups (`.zip`) pueden restaurarse en cualquier instalación de Clarifactu e incluyen las facturas de proveedor adjuntas a los gastos.
 - El sistema de licencias es offline; las claves son válidas en cualquier equipo que tenga el mismo binario.
 - Las actualizaciones automáticas solo funcionan en la versión instalada (no en modo `npm run dev`).
-- Las facturas de proveedores adjuntas a gastos se almacenan en `%APPDATA%/Clarifactu/expense-docs/` y no se incluyen en los backups de base de datos; guarda copias externas si las necesitas.
+- Las facturas de proveedores adjuntas a gastos se almacenan en `%APPDATA%/Clarifactu/expense-docs/` y se incluyen en los backups.

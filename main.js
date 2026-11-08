@@ -4,6 +4,11 @@ const fs = require('fs');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 
+// Tests (Playwright) run the app against their own throwaway data folder
+if (process.env.CLARIFACTU_USER_DATA) app.setPath('userData', process.env.CLARIFACTU_USER_DATA);
+// ...and with the window hidden, so test runs don't pop windows up on screen
+const HIDE_WINDOW = process.env.CLARIFACTU_HIDE_WINDOW === '1';
+
 // ─── Auto-updater (only in packaged builds) ───────────────────────────────────
 let autoUpdater = null;
 try {
@@ -89,7 +94,8 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: !HIDE_WINDOW
     },
     titleBarStyle: 'default',
     show: false
@@ -98,7 +104,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    if (!HIDE_WINDOW) mainWindow.show();
 
     // Check for updates after window is visible (only in packaged app)
     if (app.isPackaged && autoUpdater) {
@@ -125,6 +131,7 @@ app.whenReady().then(() => {
 
   if (isLicenseActivated()) {
     createWindow();
+    scheduleAutoBackup();
   } else {
     createLicenseWindow();
   }
@@ -157,6 +164,29 @@ ipcMain.handle('clients:search', (e, query) => db.clients.search(query));
 ipcMain.handle('clients:getAllTags', () => db.clients.getAllTags());
 ipcMain.handle('clients:getByTag', (e, tag) => db.clients.getByTag(tag));
 
+// Client import: pick a file and get a preview; nothing is saved until importCommit
+ipcMain.handle('clients:importPreview', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Importar clientes',
+    filters: [{ name: 'Hoja de cálculo', extensions: ['csv', 'xlsx', 'txt'] }],
+    properties: ['openFile']
+  });
+  if (result.canceled || !result.filePaths.length) return { success: false, reason: 'cancelled' };
+  try {
+    const importer = require('./src/import-clients');
+    const file = result.filePaths[0];
+    const { columns, clients } = importer.mapRows(importer.readClientFile(file, fs.readFileSync(file)));
+    return { success: true, file: path.basename(file), columns, ...importer.planImport(clients, db.clients.getAll()) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+ipcMain.handle('clients:importCommit', (e, list) => {
+  // Re-check against the current clients in case something changed since the preview
+  const { toCreate, skipped } = require('./src/import-clients').planImport(list, db.clients.getAll());
+  return { success: true, created: db.clients.bulkCreate(toCreate), skipped: skipped.length };
+});
+
 // Services
 ipcMain.handle('services:getAll', () => db.services.getAll());
 ipcMain.handle('services:getById', (e, id) => db.services.getById(id));
@@ -177,6 +207,7 @@ ipcMain.handle('invoices:getNumberingGaps', () => db.invoices.getNumberingGaps()
 ipcMain.handle('invoices:search', (e, query) => db.invoices.search(query));
 ipcMain.handle('invoices:getByYear', (e, year) => db.invoices.getByYear(year));
 ipcMain.handle('invoices:markEmailSent', (e, id) => { db.invoices.markEmailSent(id); return { success: true }; });
+ipcMain.handle('invoices:markReminderSent', (e, id) => { db.invoices.markReminderSent(id); return { success: true }; });
 ipcMain.handle('invoices:markAsPaid', (e, id, date) => { db.invoices.markAsPaid(id, date); return { success: true }; });
 ipcMain.handle('invoices:markAsPending', (e, id) => { db.invoices.markAsPending(id); return { success: true }; });
 ipcMain.handle('invoices:getByClient', (e, clientId) => db.invoices.getByClient(clientId));
@@ -377,6 +408,99 @@ ipcMain.handle('expenses:deleteDoc', (e, fileName) => {
   return { success: true };
 });
 
+const CATEGORY_LABELS = {
+  ARRENDAMIENTOS:'Arrendamientos y cánones', SUMINISTROS:'Suministros',
+  MATERIAL_OFICINA:'Consumos de explotación', SERVICIOS_PROF:'Servicios de profesionales independientes',
+  SEGUROS:'Otros servicios exteriores (Seguros)', PUBLICIDAD:'Publicidad y relaciones públicas',
+  FORMACION:'Otros gastos deducibles (Formación)', SEG_SOCIAL:'Seguridad Social a cargo del empresario',
+  REPARACIONES:'Reparaciones y conservación', GASTOS_FINANCIEROS:'Gastos financieros',
+  AMORTIZACIONES:'Amortizaciones', TRIBUTOS:'Tributos fiscalmente deducibles', OTROS:'Otros gastos deducibles'
+};
+
+const { workbook } = require('./src/spreadsheet');
+
+async function saveSpreadsheet(title, defaultName, xml) {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title, defaultPath: defaultName, filters: [{ name: 'Excel', extensions: ['xls'] }]
+  });
+  if (result.canceled || !result.filePath) return { success: false, reason: 'cancelled' };
+  fs.writeFileSync(result.filePath, xml, 'utf8');
+  shell.showItemInFolder(result.filePath);
+  return { success: true };
+}
+
+const sum = (rows, f) => rows.reduce((s, r) => s + (Number(r[f]) || 0), 0);
+
+// Libros registro de ingresos y gastos (IRPF, estimación directa)
+function buildLibrosRegistro(year) {
+  const { ingresos, gastos } = db.fiscal.getLibroRegistro(year);
+  const S = 'String', N = 'Number';
+  return workbook([
+    {
+      name: 'Ingresos',
+      columns: [
+        { header: 'Fecha expedición', type: S }, { header: 'Serie y número', type: S }, { header: 'Tipo', type: S },
+        { header: 'Factura rectificada', type: S }, { header: 'NIF destinatario', type: S }, { header: 'Nombre destinatario', type: S },
+        { header: 'Concepto', type: S }, { header: 'Base imponible', type: N }, { header: 'Tipo IVA %', type: N },
+        { header: 'Cuota IVA', type: N }, { header: 'Tipo retención %', type: N }, { header: 'Retención IRPF', type: N },
+        { header: 'Total factura', type: N }, { header: 'Cobro', type: S }, { header: 'Fecha cobro', type: S }
+      ],
+      rows: ingresos.map(r => [
+        vfDate(r.date), r.invoice_number, r.tipo_factura === 'R1' ? 'Rectificativa' : 'Ordinaria', r.rect_invoice_number || '',
+        r.client_nif || '', r.client_name || '', r.concept || '', r.subtotal, r.tax_rate, r.tax_amount, r.irpf_rate, r.irpf_amount,
+        r.total, r.payment_status === 'pagada' ? 'Cobrada' : 'Pendiente', r.payment_date ? vfDate(r.payment_date) : ''
+      ]),
+      totals: ['TOTAL', '', '', '', '', '', '', sum(ingresos, 'subtotal'), '', sum(ingresos, 'tax_amount'), '', sum(ingresos, 'irpf_amount'), sum(ingresos, 'total'), '', ''],
+      notes: [`Libro registro de ventas e ingresos · Ejercicio ${year} · Generado por Clarifactu`]
+    },
+    {
+      name: 'Gastos',
+      columns: [
+        { header: 'Fecha', type: S }, { header: 'Nº factura proveedor', type: S }, { header: 'NIF proveedor', type: S },
+        { header: 'Nombre proveedor', type: S }, { header: 'Concepto', type: S }, { header: 'Categoría', type: S },
+        { header: 'Base imponible', type: N }, { header: 'Tipo IVA %', type: N }, { header: 'Cuota IVA', type: N },
+        { header: 'Total', type: N }, { header: '% deducible', type: N }, { header: 'Gasto deducible', type: N }
+      ],
+      rows: gastos.map(r => [
+        vfDate(r.date), r.invoice_number || '', r.provider_nif || '', r.provider || '', r.description || '',
+        CATEGORY_LABELS[r.category] || r.category, r.amount, r.iva_rate, r.iva_amount, r.total, r.deductible_pct, r.deductible_amount
+      ]),
+      totals: ['TOTAL', '', '', '', '', '', sum(gastos, 'amount'), '', sum(gastos, 'iva_amount'), sum(gastos, 'total'), '', sum(gastos, 'deductible_amount')],
+      notes: [`Libro registro de compras y gastos · Ejercicio ${year} · Generado por Clarifactu`]
+    }
+  ]);
+}
+
+function build347(year) {
+  const m = db.fiscal.get347(year);
+  const S = 'String', N = 'Number';
+  const columns = [
+    { header: 'NIF', type: S }, { header: 'Nombre', type: S }, { header: 'Importe anual', type: N },
+    { header: '1T', type: N }, { header: '2T', type: N }, { header: '3T', type: N }, { header: '4T', type: N }, { header: 'Aviso', type: S }
+  ];
+  const row = (g, extra = '') => [g.nif, g.name, g.total, g.q1, g.q2, g.q3, g.q4, [g.nif ? '' : 'Falta el NIF', extra].filter(Boolean).join(' · ')];
+  return workbook([
+    {
+      name: 'Clientes (ventas)', columns,
+      rows: m.clientes.map(g => row(g)),
+      notes: [`Modelo 347 · Ejercicio ${year} · Clave B (ventas) · Importes con IVA, más de ${m.threshold.toFixed(2).replace('.', ',')} €`,
+        `No incluye ${m.excluded.invoicesWithWithholding} factura(s) con retención de IRPF (se declaran en el modelo 190).`]
+    },
+    {
+      name: 'Proveedores (compras)', columns,
+      rows: m.proveedores.map(g => row(g, g.rent ? 'Incluye alquiler: si le practicas retención, no va en el 347' : '')),
+      notes: [`Modelo 347 · Ejercicio ${year} · Clave A (compras) · Importes con IVA, más de ${m.threshold.toFixed(2).replace('.', ',')} €`,
+        `No incluye cuotas de Seguridad Social ni tributos (${m.excluded.expensesNotThirdParty} gasto(s)).`]
+    }
+  ]);
+}
+
+ipcMain.handle('dashboard:get347', (e, year) => db.fiscal.get347(year));
+ipcMain.handle('dashboard:exportLibros', (e, year) =>
+  saveSpreadsheet('Exportar libros registro', `libros-registro-${year}.xls`, buildLibrosRegistro(year)));
+ipcMain.handle('dashboard:export347', (e, year) =>
+  saveSpreadsheet('Exportar modelo 347', `modelo-347-${year}.xls`, build347(year)));
+
 ipcMain.handle('dashboard:exportModelos', async (e, year) => {
   const quarters = db.dashboard.getFiscalSummary(year);
   const expSummary = db.expenses.getSummaryByYear(year);
@@ -419,14 +543,6 @@ ipcMain.handle('dashboard:exportModelos', async (e, year) => {
   // Renta (gastos por categoría) sheet
   const rentaHeaders = ['Categoría (Renta)','Clave','Nº gastos','Base imponible','IVA soportado','Importe deducible'];
   const rentaHRow = rentaHeaders.map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
-  const CATEGORY_LABELS = {
-    ARRENDAMIENTOS:'Arrendamientos y cánones', SUMINISTROS:'Suministros',
-    MATERIAL_OFICINA:'Consumos de explotación', SERVICIOS_PROF:'Servicios de profesionales independientes',
-    SEGUROS:'Otros servicios exteriores (Seguros)', PUBLICIDAD:'Publicidad y relaciones públicas',
-    FORMACION:'Otros gastos deducibles (Formación)', SEG_SOCIAL:'Seguridad Social a cargo del empresario',
-    REPARACIONES:'Reparaciones y conservación', GASTOS_FINANCIEROS:'Gastos financieros',
-    AMORTIZACIONES:'Amortizaciones', TRIBUTOS:'Tributos fiscalmente deducibles', OTROS:'Otros gastos deducibles'
-  };
   const rentaRows = expSummary.map(r => {
     const label = CATEGORY_LABELS[r.category] || r.category;
     return `<Row><Cell><Data ss:Type="String">${esc(label)}</Data></Cell><Cell><Data ss:Type="String">${esc(r.category)}</Data></Cell><Cell><Data ss:Type="Number">${r.count}</Data></Cell>${[r.total_base,r.total_iva,r.total_deducible].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
@@ -548,6 +664,7 @@ ipcMain.handle('settings:saveBusiness', (e, data) => db.settings.saveBusiness(da
 ipcMain.handle('settings:getNumberSettings', () => db.settings.getNumberSettings());
 ipcMain.handle('settings:saveNumberSettings', (e, data) => db.settings.saveNumberSettings(data));
 ipcMain.handle('settings:resetCounter', () => db.settings.resetCounter());
+ipcMain.handle('settings:saveIvaExemption', (e, data) => db.settings.saveIvaExemption(data));
 ipcMain.handle('settings:saveAppearance', (e, data) => db.settings.saveAppearance(data));
 ipcMain.handle('settings:isOnboardingDone', () => db.settings.isOnboardingDone());
 ipcMain.handle('settings:markOnboardingDone', () => { db.settings.markOnboardingDone(); return true; });
@@ -1039,129 +1156,98 @@ ipcMain.handle('email:testConnection', async (e) => {
 
 // ─── Backup IPC Handlers ──────────────────────────────────────────────────────
 
-function getBackupsDir() {
-  return path.join(app.getPath('userData'), 'backups');
+const backup = require('./src/backup');
+
+function runBackup(auto = false) {
+  const biz = db.settings.getBusiness();
+  return backup.createBackup({ userData: app.getPath('userData'), db, externalDir: biz.backup_dir || '', auto });
 }
 
-function loadRegistry(backupsDir) {
+// Daily automatic backup, a few seconds after start so it doesn't slow the launch
+function scheduleAutoBackup() {
+  setTimeout(async () => {
+    try {
+      const biz = db.settings.getBusiness();
+      if (biz.auto_backup && backup.isBackupDue(app.getPath('userData'))) await runBackup(true);
+    } catch (err) {
+      console.error('Auto backup failed:', err.message);
+    }
+  }, 8000);
+}
+
+// Replaces the data with a backup file and restarts. The file is validated before
+// anything changes, and the current data is backed up first so a restore can be undone.
+async function restoreFrom(file) {
+  const pkg = backup.readBackupFile(file);
+  await runBackup(false);
+  db.close();
   try {
-    return JSON.parse(fs.readFileSync(path.join(backupsDir, 'registry.json'), 'utf8'));
-  } catch (_) {
-    return [];
+    backup.applyBackup(pkg, app.getPath('userData'));
+  } finally {
+    // Restart either way: the database is closed and must be reopened
+    app.relaunch();
+    app.quit();
   }
+  return { success: true };
 }
 
-function saveRegistry(backupsDir, registry) {
-  fs.writeFileSync(path.join(backupsDir, 'registry.json'), JSON.stringify(registry, null, 2), 'utf8');
-}
+ipcMain.handle('backup:list', () => backup.loadRegistry(app.getPath('userData')));
 
-ipcMain.handle('backup:list', () => {
-  return loadRegistry(getBackupsDir());
+ipcMain.handle('backup:create', async () => {
+  try {
+    return await runBackup(false);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
-ipcMain.handle('backup:create', () => {
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'clarifactu.db');
-  const backupsDir = getBackupsDir();
+ipcMain.handle('backup:saveSettings', (e, data) => db.settings.saveBackupSettings(data));
 
-  if (!fs.existsSync(dbPath)) {
-    return { success: false, error: 'No se encontró la base de datos' };
-  }
-
-  if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true });
-
-  const now = new Date();
-  const pad = v => String(v).padStart(2, '0');
-  const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-  const filename = `backup_${timestamp}.db`;
-  const destPath = path.join(backupsDir, filename);
-
-  // WAL checkpoint is handled by better-sqlite3 automatically on copy (WAL is consistent)
-
-  fs.copyFileSync(dbPath, destPath);
-  const stat = fs.statSync(destPath);
-
-  let registry = loadRegistry(backupsDir);
-  registry.unshift({ filename, createdAt: now.toISOString(), size: stat.size });
-
-  // Keep last 5, delete old files
-  const removed = registry.splice(5);
-  for (const entry of removed) {
-    try { fs.unlinkSync(path.join(backupsDir, entry.filename)); } catch (_) {}
-  }
-
-  saveRegistry(backupsDir, registry);
-  return { success: true, list: registry };
+ipcMain.handle('backup:chooseDir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Carpeta donde guardar también los backups',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return result.canceled || !result.filePaths.length ? null : result.filePaths[0];
 });
 
 ipcMain.handle('backup:download', async (e, filename) => {
-  const backupPath = path.join(getBackupsDir(), filename);
+  const backupPath = path.join(backup.backupsDir(app.getPath('userData')), path.basename(filename));
   if (!fs.existsSync(backupPath)) {
     return { success: false, error: 'Archivo de backup no encontrado' };
   }
-
+  const ext = path.extname(backupPath).slice(1);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Descargar backup',
-    defaultPath: filename,
-    filters: [{ name: 'Base de datos SQLite', extensions: ['db'] }]
+    defaultPath: path.basename(filename),
+    filters: [{ name: ext === 'zip' ? 'Backup de Clarifactu' : 'Base de datos SQLite', extensions: [ext] }]
   });
-
   if (result.canceled || !result.filePath) return { success: false };
-
   fs.copyFileSync(backupPath, result.filePath);
   shell.showItemInFolder(result.filePath);
   return { success: true };
 });
 
 ipcMain.handle('backup:restore', async (e, filename) => {
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'clarifactu.db');
-  const backupPath = path.join(getBackupsDir(), filename);
-
-  if (!fs.existsSync(backupPath)) {
-    return { success: false, error: 'El archivo de backup no existe' };
-  }
-
-  // Close DB connection before overwriting the file
-  db.close();
-
   try {
-    fs.copyFileSync(backupPath, dbPath);
+    return await restoreFrom(path.join(backup.backupsDir(app.getPath('userData')), path.basename(filename)));
   } catch (err) {
     return { success: false, error: err.message };
   }
-
-  // Relaunch the app to reinitialize with the restored DB
-  app.relaunch();
-  app.quit();
-  return { success: true };
 });
 
 ipcMain.handle('backup:importFile', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Importar backup externo',
-    filters: [{ name: 'Base de datos SQLite', extensions: ['db'] }],
+    filters: [{ name: 'Backup de Clarifactu', extensions: ['zip', 'db'] }],
     properties: ['openFile']
   });
-
   if (result.canceled || !result.filePaths.length) return { success: false };
-
-  const importPath = result.filePaths[0];
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'clarifactu.db');
-
-  // Close DB before overwriting
-  db.close();
-
   try {
-    fs.copyFileSync(importPath, dbPath);
+    return await restoreFrom(result.filePaths[0]);
   } catch (err) {
     return { success: false, error: err.message };
   }
-
-  app.relaunch();
-  app.quit();
-  return { success: true };
 });
 
 ipcMain.handle('email:sendInvoice', async (e, { htmlContent, invoiceNumber, toEmail, toName, subject, body }) => {

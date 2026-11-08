@@ -313,6 +313,7 @@ async function openDocumentModal(id = null) {
       if (!tpl) return;
       const titleEl = document.getElementById('doc-title');
       if (!titleEl.value) titleEl.value = tpl.name;
+      const editor = document.getElementById('doc-body');
       editor.innerHTML = renderBodyHtml(tpl.body || '');
       editor.focus();
     });

@@ -168,14 +168,15 @@ let comparisonChart = null;
 
 async function loadDashboardData(year) {
   const compareYear = parseInt(document.getElementById('dash-compare-year')?.value || year - 1);
-  const [stats, monthly, fiscal, topClients, docStats, comparison, expSummary] = await Promise.all([
+  const [stats, monthly, fiscal, topClients, docStats, comparison, expSummary, m347] = await Promise.all([
     window.api.dashboard.getStats(),
     window.api.dashboard.getMonthlyData(year),
     window.api.dashboard.getFiscalSummary(year),
     window.api.dashboard.getTopClients(year),
     window.api.dashboard.getDocumentStats(),
     window.api.dashboard.getYearComparison(year, compareYear),
-    window.api.expenses.getSummaryByYear(year)
+    window.api.expenses.getSummaryByYear(year),
+    window.api.dashboard.get347(year)
   ]);
 
   renderStats(stats, docStats);
@@ -183,7 +184,7 @@ async function loadDashboardData(year) {
   renderCharts(monthly, year);
   renderTopClients(topClients, year);
   renderComparisonChart(comparison);
-  renderFiscalSummary(fiscal, year, expSummary);
+  renderFiscalSummary(fiscal, year, expSummary, m347);
   await Promise.all([loadRecentInvoices(), loadActivityLog()]);
 
   const compareSelect = document.getElementById('dash-compare-year');
@@ -365,7 +366,44 @@ function renderM100Panel(expSummary, year) {
   `;
 }
 
-function renderFiscalSummary(quarters, year, expSummary = []) {
+// Modelo 347: third parties over 3.005,06 € in the year
+function renderM347Panel(m, year) {
+  if (!m) return '';
+  const fmt = n => formatCurrency(n);
+  const table = (title, rows, kind) => `
+    <div style="padding:12px 16px 4px;font-size:13px;font-weight:600;">${title}</div>
+    ${rows.length === 0
+      ? `<div style="padding:4px 16px 12px;font-size:12.5px;color:var(--text-secondary);">Ninguno supera ${fmt(m.threshold)} en ${year}.</div>`
+      : `<table class="table" style="margin:0;">
+          <thead><tr><th>NIF</th><th>Nombre</th><th class="text-right">Total anual</th><th class="text-right">1T</th><th class="text-right">2T</th><th class="text-right">3T</th><th class="text-right">4T</th></tr></thead>
+          <tbody>${rows.map(g => `<tr>
+            <td>${g.nif ? escapeHtml(g.nif) : '<span class="badge badge-overdue" title="El modelo 347 exige el NIF">Falta NIF</span>'}</td>
+            <td>${escapeHtml(g.name)}${kind === 'prov' && g.rent ? ' <span title="Si le practicas retención sobre el alquiler, no va en el 347" style="cursor:help;color:#d97706;">⚠ alquiler</span>' : ''}</td>
+            <td class="text-right fw-bold">${fmt(g.total)}</td>
+            <td class="text-right">${fmt(g.q1)}</td><td class="text-right">${fmt(g.q2)}</td><td class="text-right">${fmt(g.q3)}</td><td class="text-right">${fmt(g.q4)}</td>
+          </tr>`).join('')}</tbody>
+        </table>`}`;
+  return `
+    ${table('Clientes (ventas · clave B)', m.clientes, 'cli')}
+    ${table('Proveedores (compras · clave A)', m.proveedores, 'prov')}
+    <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);line-height:1.6;">
+      Terceros con más de ${fmt(m.threshold)} (IVA incluido) en el año. Se presenta en febrero del año siguiente.
+      No incluye las facturas con retención de IRPF (${m.excluded.invoicesWithWithholding}), que van en el modelo 190,
+      ni las cuotas de Seguridad Social y los tributos (${m.excluded.expensesNotThirdParty}). Revísalo con tu gestoría antes de presentarlo.
+    </div>`;
+}
+
+async function exportLibros(year) {
+  const result = await window.api.dashboard.exportLibros(year);
+  if (result && result.success) showToast('Libros registro exportados', 'success');
+}
+
+async function export347(year) {
+  const result = await window.api.dashboard.export347(year);
+  if (result && result.success) showToast('Modelo 347 exportado', 'success');
+}
+
+function renderFiscalSummary(quarters, year, expSummary = [], m347 = null) {
   const el = document.getElementById('fiscal-summary');
   if (!el) return;
 
@@ -409,13 +447,21 @@ function renderFiscalSummary(quarters, year, expSummary = []) {
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
       Modelos fiscales (Excel)
     </button>
+    <button onclick="exportLibros(${year});document.getElementById('fiscal-export-menu').style.display='none';" class="fiscal-export-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      Libros registro (Excel)
+    </button>
+    <button onclick="export347(${year});document.getElementById('fiscal-export-menu').style.display='none';" class="fiscal-export-item">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+      Modelo 347 (Excel)
+    </button>
   `;
 
   el.innerHTML = `
     <div class="card-header">
       <span class="card-title">Resumen fiscal ${year}</span>
       <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-size:12px;color:var(--text-secondary);">M-130 · M-303 · Renta</span>
+        <span style="font-size:12px;color:var(--text-secondary);">M-130 · M-303 · Renta · M-347</span>
         <div style="position:relative;" id="fiscal-export-wrapper">
           <button class="btn btn-secondary btn-sm" id="fiscal-export-toggle" style="display:flex;align-items:center;gap:5px;">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -435,6 +481,7 @@ function renderFiscalSummary(quarters, year, expSummary = []) {
       <button class="fiscal-subtab" data-ftab="m130" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 130</button>
       <button class="fiscal-subtab" data-ftab="m303" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 303</button>
       <button class="fiscal-subtab" data-ftab="m100" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 100 / Renta</button>
+      <button class="fiscal-subtab" data-ftab="m347" style="padding:9px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);">Modelo 347</button>
     </div>
 
     <!-- TAB: Ingresos / Gastos -->
@@ -572,6 +619,11 @@ function renderFiscalSummary(quarters, year, expSummary = []) {
     <div class="fiscal-fpanel" id="ftab-m100" style="padding:0;display:none;">
       ${renderM100Panel(expSummary, year)}
     </div>
+
+    <!-- TAB: Modelo 347 -->
+    <div class="fiscal-fpanel" id="ftab-m347" style="padding:0;display:none;">
+      ${renderM347Panel(m347, year)}
+    </div>
   `;
 
   // Sub-tab switching
@@ -628,6 +680,7 @@ const ACTION_META = {
   email_enviado:     { label: 'Email enviado',      color: '#059669', icon: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>' },
   pdf_exportado:     { label: 'PDF exportado',      color: '#7c3aed', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>' },
   factura_eliminada: { label: 'Factura eliminada',  color: '#dc2626', icon: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>' },
+  recordatorio_enviado: { label: 'Recordatorio de cobro', color: '#d97706', icon: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>' },
   factura_renumerada: { label: 'Factura renumerada', color: '#d97706', icon: '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>' },
   documento_enviado: { label: 'Documento enviado',  color: '#0891b2', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>' },
 };

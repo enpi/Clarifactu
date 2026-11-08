@@ -3,7 +3,7 @@
  * Creates a full invoice and verifies the log entry shows up on the Dashboard.
  */
 
-const { test, expect } = require('./fixtures');
+const { test, expect, openReadyWindow, selectOptionContaining } = require('./fixtures');
 
 const CLIENT_NAME = 'Cliente ActivityLog E2E';
 
@@ -54,7 +54,7 @@ test.describe('Activity Log', () => {
 
     // Select client
     const select = window.locator('#invoice-client-select');
-    await select.selectOption({ label: new RegExp(CLIENT_NAME) });
+    await selectOptionContaining(select, CLIENT_NAME);
     await window.waitForTimeout(300);
 
     // Add a custom item
@@ -100,7 +100,7 @@ test.describe('Activity Log', () => {
   });
 
   test.afterAll(async ({ app }) => {
-    const page = await app.firstWindow();
+    const page = await openReadyWindow(app);
     await cleanupTestClient(page);
   });
 });

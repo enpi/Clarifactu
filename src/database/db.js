@@ -103,6 +103,11 @@ function createTables() {
   `);
 }
 
+const DEFAULT_REMINDER_SUBJECT = 'Recordatorio: factura {numero} pendiente de pago';
+const DEFAULT_REMINDER_BODY = 'Hola {cliente},\n\nTe escribo para recordarte que la factura {numero} del {fecha}, por importe de {total}, sigue pendiente de pago ({dias} días desde su emisión).\n\nTe la adjunto de nuevo. Si ya has realizado el pago, por favor ignora este mensaje.\n\nUn saludo.';
+
+const DEFAULT_IVA_EXEMPT_TEXT = 'Operación exenta de IVA según el artículo 20.Uno.3º de la Ley 37/1992, del Impuesto sobre el Valor Añadido.';
+
 function runMigrations() {
   // Add irpf columns to existing databases
   try { db.exec('ALTER TABLE invoices ADD COLUMN irpf_rate REAL DEFAULT 0'); } catch (_) {}
@@ -136,8 +141,6 @@ function runMigrations() {
   // Signature image (base64)
   try { db.exec("ALTER TABLE business_settings ADD COLUMN signature TEXT DEFAULT ''"); } catch (_) {}
 
-  // Document email tracking
-  try { db.exec("ALTER TABLE documents ADD COLUMN email_sent_at TEXT DEFAULT ''"); } catch (_) {}
 
   // Overdue threshold
   try { db.exec("ALTER TABLE invoice_number_settings ADD COLUMN overdue_days INTEGER DEFAULT 30"); } catch (_) {}
@@ -154,6 +157,17 @@ function runMigrations() {
   try { db.exec("ALTER TABLE invoices ADD COLUMN rectified INTEGER DEFAULT 0"); } catch (_) {}
   try { db.exec("ALTER TABLE invoice_number_settings ADD COLUMN rectificativa_counter INTEGER DEFAULT 0"); } catch (_) {}
 
+  // IVA exemption note printed on invoices with 0% VAT (sanitary services are exempt)
+  try { db.exec("ALTER TABLE business_settings ADD COLUMN iva_exempt_enabled INTEGER DEFAULT 1"); } catch (_) {}
+  try { db.exec(`ALTER TABLE business_settings ADD COLUMN iva_exempt_text TEXT DEFAULT '${DEFAULT_IVA_EXEMPT_TEXT}'`); } catch (_) {}
+
+  // Payment reminders: when the last one was sent, and the email template
+  try { db.exec("ALTER TABLE invoices ADD COLUMN reminder_sent_at TEXT DEFAULT ''"); } catch (_) {}
+
+  // Backups: automatic daily backup and optional extra copy in a folder of the user's choice
+  try { db.exec("ALTER TABLE business_settings ADD COLUMN auto_backup INTEGER DEFAULT 1"); } catch (_) {}
+  try { db.exec("ALTER TABLE business_settings ADD COLUMN backup_dir TEXT DEFAULT ''"); } catch (_) {}
+
   // Onboarding flag
   try { db.exec("ALTER TABLE business_settings ADD COLUMN onboarding_done INTEGER DEFAULT 0"); } catch (_) {}
 
@@ -167,6 +181,10 @@ function runMigrations() {
       default_body TEXT DEFAULT 'Hola {cliente},\n\nAdjunto encontrarás la factura {numero} por importe de {total}.\n\nQuedo a tu disposición para cualquier consulta.\n\nUn saludo.'
     );
   `);
+
+  // Payment reminder template (after email_settings exists)
+  try { db.exec(`ALTER TABLE email_settings ADD COLUMN reminder_subject TEXT DEFAULT '${DEFAULT_REMINDER_SUBJECT}'`); } catch (_) {}
+  try { db.exec(`ALTER TABLE email_settings ADD COLUMN reminder_body TEXT DEFAULT '${DEFAULT_REMINDER_BODY}'`); } catch (_) {}
 
   // Activity log
   db.exec(`
@@ -202,6 +220,10 @@ function runMigrations() {
       FOREIGN KEY(client_id) REFERENCES clients(id)
     );
   `);
+
+  // Document email tracking (must run after the documents table exists, or a fresh
+  // database never gets the column)
+  try { db.exec("ALTER TABLE documents ADD COLUMN email_sent_at TEXT DEFAULT ''"); } catch (_) {}
 
   // Expenses
   db.exec(`
@@ -268,6 +290,20 @@ const clients = {
   },
   getById(id) {
     return db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+  },
+  // All-or-nothing import of several clients
+  bulkCreate(list) {
+    const stmt = db.prepare(`
+      INSERT INTO clients (name, nif, address, email, phone, notes, tags, birth_date)
+      VALUES (@name, @nif, @address, @email, @phone, @notes, @tags, @birth_date)
+    `);
+    return db.transaction(() => {
+      for (const c of list) {
+        stmt.run({ name: c.name, nif: c.nif || '', address: c.address || '', email: c.email || '', phone: c.phone || '',
+          notes: c.notes || '', tags: c.tags || '', birth_date: c.birth_date || '' });
+      }
+      return list.length;
+    })();
   },
   create(data) {
     const stmt = db.prepare(`
@@ -712,6 +748,16 @@ const settings = {
     `).run(data);
     return db.prepare('SELECT * FROM business_settings WHERE id = 1').get();
   },
+  saveBackupSettings({ auto_backup, backup_dir }) {
+    db.prepare('UPDATE business_settings SET auto_backup = ?, backup_dir = ? WHERE id = 1')
+      .run(auto_backup ? 1 : 0, String(backup_dir || ''));
+    return db.prepare('SELECT * FROM business_settings WHERE id = 1').get();
+  },
+  saveIvaExemption({ iva_exempt_enabled, iva_exempt_text }) {
+    db.prepare('UPDATE business_settings SET iva_exempt_enabled = ?, iva_exempt_text = ? WHERE id = 1')
+      .run(iva_exempt_enabled ? 1 : 0, String(iva_exempt_text || '').trim() || DEFAULT_IVA_EXEMPT_TEXT);
+    return db.prepare('SELECT * FROM business_settings WHERE id = 1').get();
+  },
   saveAppearance(data) {
     db.prepare(`
       UPDATE business_settings
@@ -1015,12 +1061,18 @@ const emailSettings = {
     return db.prepare('SELECT * FROM email_settings WHERE id = 1').get();
   },
   save(data) {
+    // Fields not sent keep their current value
+    const current = db.prepare('SELECT * FROM email_settings WHERE id = 1').get();
+    const row = { ...current, ...data };
+    row.reminder_subject = String(row.reminder_subject || '').trim() || DEFAULT_REMINDER_SUBJECT;
+    row.reminder_body = String(row.reminder_body || '').trim() ? row.reminder_body : DEFAULT_REMINDER_BODY;
     db.prepare(`
       UPDATE email_settings
       SET gmail_user=@gmail_user, gmail_app_password=@gmail_app_password,
-          default_subject=@default_subject, default_body=@default_body
+          default_subject=@default_subject, default_body=@default_body,
+          reminder_subject=@reminder_subject, reminder_body=@reminder_body
       WHERE id=1
-    `).run(data);
+    `).run(row);
     return db.prepare('SELECT * FROM email_settings WHERE id = 1').get();
   }
 };
@@ -1202,11 +1254,111 @@ const expenses = {
   }
 };
 
+// ─── Invoice: markReminderSent ────────────────────────────────────────────────
+
+invoices.markReminderSent = function(id) {
+  db.prepare("UPDATE invoices SET reminder_sent_at = datetime('now', 'localtime') WHERE id = ?").run(id);
+};
+
 // ─── Invoice: markEmailSent ────────────────────────────────────────────────────
 
 invoices.markEmailSent = function(id) {
   db.prepare("UPDATE invoices SET email_sent_at = datetime('now', 'localtime') WHERE id = ?").run(id);
 };
+
+// ─── Fiscal reports ───────────────────────────────────────────────────────────
+
+const M347_THRESHOLD = 3005.06;
+// Payments that are not operations with a third party (Social Security fees, taxes)
+const M347_EXCLUDED_EXPENSE_CATEGORIES = ['SEG_SOCIAL', 'TRIBUTOS'];
+
+const quarterOf = isoDate => Math.floor((parseInt(String(isoDate).slice(5, 7), 10) - 1) / 3) + 1;
+
+// Adds `amount` to the group `key`, keeping per-quarter totals
+function addToGroup(groups, key, base, amount, date) {
+  const g = groups.get(key) || { ...base, total: 0, q1: 0, q2: 0, q3: 0, q4: 0, count: 0 };
+  g.total += amount;
+  g[`q${quarterOf(date)}`] += amount;
+  g.count++;
+  groups.set(key, g);
+}
+
+const round2 = n => Math.round(n * 100) / 100;
+
+const fiscal = {
+  // Libros registro de ingresos y gastos (IRPF, estimación directa) for a year
+  getLibroRegistro(year) {
+    const y = String(year);
+    const ingresos = db.prepare(`
+      SELECT i.date, i.invoice_number, i.tipo_factura, c.nif AS client_nif, c.name AS client_name,
+             i.subtotal, i.tax_rate, i.tax_amount, i.irpf_rate, i.irpf_amount, i.total,
+             i.payment_status, i.payment_date, r.invoice_number AS rect_invoice_number,
+             (SELECT GROUP_CONCAT(service_name, ', ') FROM invoice_items WHERE invoice_id = i.id) AS concept
+      FROM invoices i
+      LEFT JOIN clients c ON c.id = i.client_id
+      LEFT JOIN invoices r ON r.id = i.factura_rectificada_id
+      WHERE strftime('%Y', i.date) = ?
+      ORDER BY i.date ASC, i.invoice_number ASC
+    `).all(y);
+    const gastos = db.prepare(`
+      SELECT date, invoice_number, provider_nif, provider, description, category,
+             amount, iva_rate, iva_amount, total, deductible_pct, deductible_amount
+      FROM expenses
+      WHERE strftime('%Y', date) = ?
+      ORDER BY date ASC, id ASC
+    `).all(y);
+    return { ingresos, gastos };
+  },
+
+  // Modelo 347: third parties with more than 3.005,06 € (VAT included) in the year.
+  // Invoices with IRPF withholding are left out (they go in modelo 190, not the 347).
+  get347(year) {
+    const y = String(year);
+    const clients = new Map();
+    let withheld = 0;
+    const invs = db.prepare(`
+      SELECT i.date, i.subtotal, i.tax_amount, i.irpf_amount, i.client_id, c.nif, c.name
+      FROM invoices i LEFT JOIN clients c ON c.id = i.client_id
+      WHERE strftime('%Y', i.date) = ?
+    `).all(y);
+    for (const inv of invs) {
+      if (Number(inv.irpf_amount) > 0) { withheld++; continue; }
+      const nif = String(inv.nif || '').trim().toUpperCase();
+      const key = nif || `client:${inv.client_id}`;
+      addToGroup(clients, key, { nif, name: inv.name || 'Sin cliente' }, (inv.subtotal || 0) + (inv.tax_amount || 0), inv.date);
+    }
+
+    const providers = new Map();
+    let excludedExpenses = 0;
+    const exps = db.prepare(`SELECT date, provider, provider_nif, category, total FROM expenses WHERE strftime('%Y', date) = ?`).all(y);
+    for (const e of exps) {
+      if (M347_EXCLUDED_EXPENSE_CATEGORIES.includes(e.category)) { excludedExpenses++; continue; }
+      const nif = String(e.provider_nif || '').trim().toUpperCase();
+      const name = String(e.provider || '').trim();
+      const key = nif || `name:${name.toLowerCase()}`;
+      addToGroup(providers, key, { nif, name: name || 'Sin proveedor', rent: false }, e.total || 0, e.date);
+      if (e.category === 'ARRENDAMIENTOS') providers.get(key).rent = true;
+    }
+
+    const over = groups => [...groups.values()]
+      .filter(g => Math.abs(g.total) > M347_THRESHOLD)
+      .map(g => ({ ...g, total: round2(g.total), q1: round2(g.q1), q2: round2(g.q2), q3: round2(g.q3), q4: round2(g.q4) }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      year: Number(year),
+      threshold: M347_THRESHOLD,
+      clientes: over(clients),
+      proveedores: over(providers),
+      excluded: { invoicesWithWithholding: withheld, expensesNotThirdParty: excludedExpenses }
+    };
+  }
+};
+
+// Consistent copy of the live database (includes changes still in the WAL file)
+function backup(destPath) {
+  return db.backup(destPath);
+}
 
 function close() {
   if (db) {
@@ -1218,6 +1370,8 @@ function close() {
 module.exports = {
   initialize,
   close,
+  backup,
+  fiscal,
   clients,
   services,
   invoices,

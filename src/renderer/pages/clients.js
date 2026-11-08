@@ -42,12 +42,18 @@ async function renderClients(container) {
         <h1 class="page-title">Clientes</h1>
         <p class="page-subtitle">Gestiona tus clientes</p>
       </div>
+      <div style="display:flex;gap:8px;">
+      <button class="btn btn-secondary" id="import-clients-btn" title="Importar clientes desde un CSV o Excel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Importar
+      </button>
       <button class="btn btn-primary" id="new-client-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
         Nuevo cliente
       </button>
+      </div>
     </div>
 
     <div class="card">
@@ -89,6 +95,7 @@ async function renderClients(container) {
   `;
 
   document.getElementById('new-client-btn').addEventListener('click', () => openClientModal());
+  document.getElementById('import-clients-btn').addEventListener('click', () => importClients());
 
   const searchInput = document.getElementById('client-search');
   searchInput.addEventListener('input', debounce((e) => {
@@ -478,4 +485,58 @@ async function deleteClient(id, name) {
   } catch (err) {
     showToast('Error al eliminar el cliente: ' + err.message, 'error');
   }
+}
+
+
+// ─── Import clients from CSV / Excel ─────────────────────────────────────────
+
+async function importClients() {
+  const plan = await window.api.clients.importPreview();
+  if (!plan.success) {
+    if (plan.reason !== 'cancelled') showToast('No se pudo leer el archivo: ' + plan.error, 'error');
+    return;
+  }
+  const FIELD_LABELS = { name: 'Nombre', nif: 'NIF', email: 'Email', phone: 'Teléfono', address: 'Dirección', notes: 'Notas', tags: 'Etiquetas', birth_date: 'Fecha de nacimiento' };
+  const preview = plan.toCreate.slice(0, 50);
+  openModal('Importar clientes', `
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div style="font-size:13px;">
+        <strong>${escapeHtml(plan.file)}</strong> · columnas reconocidas: ${plan.columns.map(c => FIELD_LABELS[c] || c).join(', ')}
+      </div>
+      <div style="display:flex;gap:10px;">
+        <span class="badge badge-paid">${plan.toCreate.length} nuevo${plan.toCreate.length !== 1 ? 's' : ''}</span>
+        ${plan.skipped.length ? `<span class="badge badge-overdue">${plan.skipped.length} se omitirán</span>` : ''}
+      </div>
+      ${preview.length ? `
+        <div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+          <table class="table" style="margin:0;font-size:12.5px;">
+            <thead><tr><th>Nombre</th><th>NIF</th><th>Email</th><th>Teléfono</th></tr></thead>
+            <tbody>${preview.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.nif)}</td><td>${escapeHtml(c.email)}</td><td>${escapeHtml(c.phone)}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+        ${plan.toCreate.length > preview.length ? `<div style="font-size:12px;color:var(--text-secondary);">… y ${plan.toCreate.length - preview.length} más</div>` : ''}` : ''}
+      ${plan.skipped.length ? `
+        <details style="font-size:12.5px;">
+          <summary style="cursor:pointer;">Ver los que se omitirán</summary>
+          <ul style="margin:8px 0 0 18px;max-height:160px;overflow:auto;">
+            ${plan.skipped.map(c => `<li>Fila ${c.line}: ${escapeHtml(c.name || '(sin nombre)')} — ${escapeHtml(c.reason)}</li>`).join('')}
+          </ul>
+        </details>` : ''}
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" id="confirm-import-btn" ${plan.toCreate.length ? '' : 'disabled'}>Importar ${plan.toCreate.length} cliente${plan.toCreate.length !== 1 ? 's' : ''}</button>
+      </div>
+    </div>
+  `, { size: 'lg' });
+
+  document.getElementById('confirm-import-btn').addEventListener('click', async () => {
+    try {
+      const result = await window.api.clients.importCommit(plan.toCreate);
+      closeModal();
+      showToast(`${result.created} cliente${result.created !== 1 ? 's' : ''} importado${result.created !== 1 ? 's' : ''}`, 'success');
+      navigateTo('clients');
+    } catch (err) {
+      showToast('Error al importar: ' + errMsg(err), 'error');
+    }
+  });
 }

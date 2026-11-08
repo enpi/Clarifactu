@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld('api', {
     delete: (id) => ipcRenderer.invoke('clients:delete', id),
     search: (query) => ipcRenderer.invoke('clients:search', query),
     getAllTags: () => ipcRenderer.invoke('clients:getAllTags'),
-    getByTag: (tag) => ipcRenderer.invoke('clients:getByTag', tag)
+    getByTag: (tag) => ipcRenderer.invoke('clients:getByTag', tag),
+    importPreview: () => ipcRenderer.invoke('clients:importPreview'),
+    importCommit: (list) => ipcRenderer.invoke('clients:importCommit', list)
   },
 
   // ── Services ─────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
     search: (query) => ipcRenderer.invoke('invoices:search', query),
     getByYear: (year) => ipcRenderer.invoke('invoices:getByYear', year),
     markEmailSent: (id) => ipcRenderer.invoke('invoices:markEmailSent', id),
+    markReminderSent: (id) => ipcRenderer.invoke('invoices:markReminderSent', id),
     markAsPaid: (id, date) => ipcRenderer.invoke('invoices:markAsPaid', id, date),
     markAsPending: (id) => ipcRenderer.invoke('invoices:markAsPending', id),
     getByClient: (clientId) => ipcRenderer.invoke('invoices:getByClient', clientId),
@@ -64,6 +67,7 @@ contextBridge.exposeInMainWorld('api', {
     getNumberSettings: () => ipcRenderer.invoke('settings:getNumberSettings'),
     saveNumberSettings: (data) => ipcRenderer.invoke('settings:saveNumberSettings', data),
     resetCounter: () => ipcRenderer.invoke('settings:resetCounter'),
+    saveIvaExemption: (data) => ipcRenderer.invoke('settings:saveIvaExemption', data),
     saveAppearance: (data) => ipcRenderer.invoke('settings:saveAppearance', data),
     isOnboardingDone: () => ipcRenderer.invoke('settings:isOnboardingDone'),
     markOnboardingDone: () => ipcRenderer.invoke('settings:markOnboardingDone')
@@ -110,6 +114,9 @@ contextBridge.exposeInMainWorld('api', {
     getYearComparison: (year1, year2) => ipcRenderer.invoke('dashboard:getYearComparison', year1, year2),
     exportFiscalExcel: (year) => ipcRenderer.invoke('dashboard:exportFiscalExcel', year),
     exportFiscalPDF: (year) => ipcRenderer.invoke('dashboard:exportFiscalPDF', year),
+    get347: (year) => ipcRenderer.invoke('dashboard:get347', year),
+    exportLibros: (year) => ipcRenderer.invoke('dashboard:exportLibros', year),
+    export347: (year) => ipcRenderer.invoke('dashboard:export347', year),
     exportModelos: (year) => ipcRenderer.invoke('dashboard:exportModelos', year),
   },
 
@@ -149,7 +156,9 @@ contextBridge.exposeInMainWorld('api', {
     create: () => ipcRenderer.invoke('backup:create'),
     download: (filename) => ipcRenderer.invoke('backup:download', filename),
     restore: (filename) => ipcRenderer.invoke('backup:restore', filename),
-    importFile: () => ipcRenderer.invoke('backup:importFile')
+    importFile: () => ipcRenderer.invoke('backup:importFile'),
+    saveSettings: (data) => ipcRenderer.invoke('backup:saveSettings', data),
+    chooseDir: () => ipcRenderer.invoke('backup:chooseDir')
   },
 
   // ── Documents ─────────────────────────────────────────────────────────────

@@ -29,9 +29,13 @@ function generateKey() {
   return `${body}-${check}`;
 }
 
-const count = parseInt(process.argv[2]) || 1;
-console.log(`\nGenerando ${count} clave${count !== 1 ? 's' : ''} de licencia:\n`);
-for (let i = 0; i < count; i++) {
-  console.log('  ' + generateKey());
+module.exports = { generateKey };
+
+if (require.main === module) {
+  const count = parseInt(process.argv[2]) || 1;
+  console.log(`\nGenerando ${count} clave${count !== 1 ? 's' : ''} de licencia:\n`);
+  for (let i = 0; i < count; i++) {
+    console.log('  ' + generateKey());
+  }
+  console.log('');
 }
-console.log('');

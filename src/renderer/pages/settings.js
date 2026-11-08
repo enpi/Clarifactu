@@ -199,6 +199,26 @@ async function renderSettings(container) {
       </div>
 
       <div class="card" style="margin-top:20px;">
+        <div class="card-header"><span class="card-title">Exención de IVA</span></div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;">
+            Una factura sin IVA debe indicar la norma que la exime. Este texto se imprime en las facturas con IVA 0 %.
+          </p>
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+              <input type="checkbox" id="iva-exempt-enabled" ${business.iva_exempt_enabled ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);">
+              Mostrar la mención de exención en las facturas sin IVA
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Texto de la mención</label>
+            <textarea class="form-control" id="iva-exempt-text" rows="2">${escapeHtml(business.iva_exempt_text || '')}</textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" id="iva-exempt-save">Guardar</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
         <div class="card-header"><span class="card-title">Renumerar factura</span></div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;">
@@ -263,6 +283,17 @@ async function renderSettings(container) {
               <textarea class="form-control" id="email-body" rows="5" placeholder="Mensaje del email...">${escapeHtml(emailCfg.default_body || '')}</textarea>
               <small style="color:var(--text-secondary);font-size:11.5px;">Variables: {numero}, {cliente}, {total}, {fecha}</small>
             </div>
+            <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;font-weight:600;">Recordatorio de cobro</div>
+            <div style="font-size:12.5px;color:var(--text-secondary);margin:4px 0 10px;">Se envía desde las facturas vencidas, con la factura adjunta.</div>
+            <div class="form-group">
+              <label class="form-label">Asunto del recordatorio</label>
+              <input type="text" class="form-control" id="reminder-subject" value="${escapeHtml(emailCfg.reminder_subject || '')}">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Cuerpo del recordatorio</label>
+              <textarea class="form-control" id="reminder-body" rows="6">${escapeHtml(emailCfg.reminder_body || '')}</textarea>
+              <small style="color:var(--text-secondary);font-size:11.5px;">Variables: {numero}, {cliente}, {total}, {fecha}, {dias} (días desde la fecha de la factura)</small>
+            </div>
             <div style="display:flex;gap:8px;margin-top:16px;">
               <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
               <button type="button" class="btn btn-secondary btn-sm" id="test-email-btn">Probar conexión</button>
@@ -287,8 +318,23 @@ async function renderSettings(container) {
         </div>
         <div class="card-body">
           <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;color:#1e40af;line-height:1.6;">
-            <strong>¿Qué incluye el backup?</strong> Una copia completa de tu base de datos: clientes, servicios, facturas y configuración.
-            Se guardan automáticamente los <strong>5 backups más recientes</strong>; los anteriores se eliminan.
+            <strong>¿Qué incluye el backup?</strong> Una copia completa de tus datos (clientes, servicios, facturas, gastos, documentos y configuración)
+            y las <strong>facturas de proveedor</strong> adjuntas a los gastos.
+            Se guardan los <strong>5 backups más recientes</strong>; los anteriores se eliminan.
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px;">
+            <label class="form-label" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+              <input type="checkbox" id="auto-backup" ${business.auto_backup ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);">
+              Crear un backup automático cada día (al abrir la aplicación)
+            </label>
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">
+              Guardar también una copia en otra carpeta (por ejemplo, Google Drive u OneDrive), con los 5 últimos backups:
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <code id="backup-dir-label" data-dir="${escapeHtml(business.backup_dir || '')}" style="font-size:12px;padding:4px 8px;background:var(--bg-secondary, #f1f5f9);border-radius:6px;">${escapeHtml(business.backup_dir || 'Ninguna carpeta elegida')}</code>
+              <button class="btn btn-secondary btn-sm" id="backup-dir-choose">Elegir carpeta</button>
+              <button class="btn btn-ghost btn-sm" id="backup-dir-clear" style="${business.backup_dir ? '' : 'display:none;'}">Quitar</button>
+            </div>
           </div>
           <div id="backup-list-container">
             <div style="color:var(--text-secondary);font-size:13px;text-align:center;padding:20px 0;">
@@ -313,7 +359,7 @@ async function renderSettings(container) {
           </div>
           <button class="btn btn-secondary btn-sm" id="import-backup-btn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Seleccionar archivo .db para importar
+            Seleccionar archivo de backup (.zip o .db)
           </button>
         </div>
       </div>
@@ -964,7 +1010,9 @@ async function renderSettings(container) {
       gmail_user: document.getElementById('email-user').value.trim(),
       gmail_app_password: document.getElementById('email-pass').value.trim(),
       default_subject: document.getElementById('email-subject').value.trim(),
-      default_body: document.getElementById('email-body').value
+      default_body: document.getElementById('email-body').value,
+      reminder_subject: document.getElementById('reminder-subject').value.trim(),
+      reminder_body: document.getElementById('reminder-body').value
     };
     try {
       await window.api.email.saveSettings(data);
@@ -1023,6 +1071,7 @@ async function renderSettings(container) {
                 <div class="backup-item-date">
                   ${dateStr}
                   ${isLatest ? '<span class="backup-badge-latest">más reciente</span>' : ''}
+                  ${entry.auto ? '<span class="backup-badge-latest" style="background:#f1f5f9;color:#64748b;">automático</span>' : ''}
                 </div>
                 <div class="backup-item-meta">${sizeKB} KB · ${escapeHtml(entry.filename)}</div>
               </div>
@@ -1057,7 +1106,7 @@ async function renderSettings(container) {
       btn.addEventListener('click', async () => {
         const confirmed = await showConfirm(
           '¿Restaurar este backup?',
-          `Se restaurará el backup del ${btn.dataset.date}.\n\nEsta acción reemplazará TODOS los datos actuales (clientes, facturas, servicios y configuración) con los del backup seleccionado.\n\nLa aplicación se reiniciará automáticamente. Esta acción no se puede deshacer.`,
+          `Se restaurará el backup del ${btn.dataset.date}.\n\nEsta acción reemplazará TODOS los datos actuales (clientes, facturas, servicios y configuración) con los del backup seleccionado.\n\nAntes se guardará un backup de tus datos actuales, por si necesitas volver atrás. La aplicación se reiniciará automáticamente.`,
           'Restaurar y reiniciar'
         );
         if (!confirmed) return;
@@ -1119,16 +1168,47 @@ async function renderSettings(container) {
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Crear backup ahora`;
     if (result.success) {
       showToast('Backup creado correctamente', 'success');
+      if (result.external && !result.external.success) {
+        showToast('No se pudo copiar a la carpeta elegida: ' + result.external.error, 'error');
+      }
       renderBackupList();
     } else {
       showToast('Error al crear backup: ' + (result.error || ''), 'error');
     }
   });
 
+  // Automatic backups + extra folder
+  async function saveBackupSettings(changes) {
+    const label = document.getElementById('backup-dir-label');
+    const saved = await window.api.backup.saveSettings({
+      auto_backup: document.getElementById('auto-backup').checked,
+      backup_dir: label.dataset.dir || '',
+      ...changes
+    });
+    label.dataset.dir = saved.backup_dir || '';
+    label.textContent = saved.backup_dir || 'Ninguna carpeta elegida';
+    document.getElementById('backup-dir-clear').style.display = saved.backup_dir ? '' : 'none';
+    return saved;
+  }
+  document.getElementById('auto-backup').addEventListener('change', async (e) => {
+    await saveBackupSettings({ auto_backup: e.target.checked });
+    showToast(e.target.checked ? 'Backup automático diario activado' : 'Backup automático desactivado', 'success');
+  });
+  document.getElementById('backup-dir-choose').addEventListener('click', async () => {
+    const dir = await window.api.backup.chooseDir();
+    if (!dir) return;
+    await saveBackupSettings({ backup_dir: dir });
+    showToast('Los próximos backups se copiarán también en esa carpeta', 'success');
+  });
+  document.getElementById('backup-dir-clear').addEventListener('click', async () => {
+    await saveBackupSettings({ backup_dir: '' });
+    showToast('Ya no se copiarán los backups a otra carpeta', 'success');
+  });
+
   document.getElementById('import-backup-btn').addEventListener('click', async () => {
     const confirmed = await showConfirm(
       '¿Importar backup externo?',
-      'Importar un archivo de backup reemplazará completamente todos los datos actuales de la aplicación.\n\nAsegúrate de haber creado un backup previo si deseas conservar los datos actuales.\n\nLa aplicación se reiniciará automáticamente tras la importación.',
+      'Importar un archivo de backup reemplazará completamente todos los datos actuales de la aplicación.\n\nAntes se guardará un backup de tus datos actuales, por si necesitas volver atrás.\n\nLa aplicación se reiniciará automáticamente tras la importación.',
       'Seleccionar e importar'
     );
     if (!confirmed) return;
@@ -1136,6 +1216,20 @@ async function renderSettings(container) {
     if (!result.success && !result.error) return; // cancelled
     if (result.error) showToast('Error al importar: ' + result.error, 'error');
     // If success, app is relaunching
+  });
+
+  // IVA exemption note
+  document.getElementById('iva-exempt-save').addEventListener('click', async () => {
+    try {
+      const saved = await window.api.settings.saveIvaExemption({
+        iva_exempt_enabled: document.getElementById('iva-exempt-enabled').checked,
+        iva_exempt_text: document.getElementById('iva-exempt-text').value
+      });
+      document.getElementById('iva-exempt-text').value = saved.iva_exempt_text;
+      showToast('Mención de exención guardada', 'success');
+    } catch (err) {
+      showToast('Error: ' + errMsg(err), 'error');
+    }
   });
 
   // Renumber invoice

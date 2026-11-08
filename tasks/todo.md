@@ -1,24 +1,67 @@
-# Fix implicit state machine gaps (2026-11-08)
+# Nuevas utilidades + tests e2e (2026-11-08)
 
-- [x] VeriFactu: registered invoices (`enviada` / CSV) cannot be edited, deleted or re-hashed (enforced in db + main, hidden in UI)
-- [x] VeriFactu: invalidating a pending hash also clears pending hashes chained after it (edit, delete, recalc, renumber); block if a later record is registered
-- [x] VeriFactu: edit clears hash only when a hashed field changes (date, tax_amount, total)
-- [x] VeriFactu: chain tail = record nobody chains to (not highest id); "Calcular huellas" processes in creation order
-- [x] Credit notes: rectificativa counter resets each year (shared year check)
-- [x] Credit notes: creating R1 marks original in the same transaction; deleting R1 clears `rectified` if no other R1 remains
-- [x] Payment: single overdue helper honouring `overdue_days` (invoices + clients pages)
-- [x] Unit tests for each, full suite green (157/157, twice against a persisted temp DB)
-- [ ] Manual check in the app (e2e suite cannot run: see review)
+Pedido: puntos 1, 4, 5, 6, 7, 8 y 9 de la lista de ideas, y arreglar los tests e2e.
+
+## 0. Tests e2e (primero, para poder verificar lo demás)
+- [x] `main.js`: si existe `CLARIFACTU_USER_DATA`, usarla como carpeta de datos (solo la usan los tests)
+- [x] Fixture: carpeta temporal nueva por proceso de test (los tests de un fichero la comparten), `license.json` con una clave válida generada, onboarding marcado como hecho
+- [x] Actualizar tests desfasados (p. ej. pestañas de Configuración) y conseguir la suite en verde
+
+## 1. Mención de exención de IVA
+- [x] Ajuste en Configuración → Facturas: texto de exención (por defecto art. 20.Uno.3º Ley 37/1992) y si se activa
+- [x] Se imprime en vista previa, PDF y email cuando la factura tiene IVA 0 %
+
+## 7 + 8. Backups
+- [x] Bug: el backup copiaba solo `clarifactu.db` sin el `-wal` → usar la API de backup de SQLite (copia consistente)
+- [x] Nuevo formato `.zip`: base de datos + carpeta `expense-docs/` (facturas de proveedor)
+- [x] Restaurar/importar acepta `.zip` (nuevo) y `.db` (antiguo)
+- [x] Backup automático al arrancar si el último tiene más de 24 h (activable en ajustes)
+- [x] Carpeta externa opcional (Drive/OneDrive…): cada backup se copia también allí (se guardan los 5 últimos)
+
+## 4. Recordatorio de cobro
+- [x] Plantilla de asunto/cuerpo en Configuración → Email (con {numero}, {cliente}, {total}, {fecha}, {dias})
+- [x] Botón "Enviar recordatorio" en facturas vencidas + acción en grupo; adjunta la factura en PDF
+- [x] Guarda `reminder_sent_at`, lo muestra en la lista y lo anota en la actividad
+
+## 5. Libros registro (ingresos y gastos)
+- [x] Exportación anual a Excel con dos hojas: facturas emitidas y gastos, con los campos que exigen los libros registro de IRPF
+      (no se garantiza que sea la plantilla exacta de importación de la AEAT)
+
+## 6. Modelo 347
+- [x] Clientes y proveedores con > 3.005,06 € (IVA incluido) en el año, con desglose trimestral
+- [x] Excluye operaciones con retención de IRPF (no van en el 347); proveedores agrupados por NIF
+- [x] Nueva pestaña en el resumen fiscal + exportación a Excel
+
+## 9. Importar clientes desde CSV / Excel
+- [x] CSV (separador `,` o `;`, comillas) y `.xlsx` (primera hoja)
+- [x] Reconoce cabeceras en español/inglés; vista previa con nuevos/duplicados (mismo NIF o email) antes de importar
+
+## Cierre
+- [x] Tests unitarios por funcionalidad, suite unitaria y e2e en verde
+- [x] README actualizado
 
 ## Review
 
-- All fixes live in the db layer (src/database/db.js), so the UI cannot bypass them; the UI only hides actions that would be refused.
-- `markAsRectified` IPC removed: `invoices.create` marks the original in the same transaction.
-- e2e (Playwright) suite is not usable as-is: launched as `electron main.js` the app uses `%APPDATA%/Electron`, which has no license,
-  so every test gets the activation window. Fix idea: give the fixture its own userData dir + a test license (or bypass when NODE_ENV=test).
-- Follow-up (fixed): VeriFactu hash/XML/QR moved to `src/verifactu.js`, shared by main.js and the tests (they used to test copies).
-  - Credit notes hashed and sent as `R1` with `TipoRectificativa=I` + `FacturasRectificadas` (the corrected invoice)
-  - `db.verifactu.getRecordsForSubmission` loads records in chain order with the previous record's number/date
-    (`NumSerieFacturaAnterior` / `FechaExpedicionFacturaAnterior` were always sent empty) for XML export, cert and DNIe submit
-  - Unit 162/162, integration (AEAT preproduction) 22/22. User's DB checked read-only: VeriFactu off, no credit notes → no stale hashes.
-  - Not verified against AEAT with a real certificate: the R1 XML has only been checked for structure/order, not accepted by AEAT.
+- Unit 210/210 (3 runs in a row), e2e 45/45 with hidden windows and a throwaway data folder.
+- Bugs found on the way (fixed, each with a test that fails without the fix):
+  - Backups copied only `clarifactu.db`, missing everything still in the `-wal` file (on a never-checkpointed DB the copy
+    had no tables at all). Now SQLite's backup API. The user's only backup is from 2026-03-12.
+  - Fresh installs: the `documents.email_sent_at` migration ran before the table existed → first launch had a broken
+    Dashboard (activity log stuck on "Cargando…").
+  - Documents: "Aplicar plantilla" referenced an undefined `editor` (left over from the rich editor refactor) → title filled,
+    content empty. Reported by the user mid-task.
+  - `tests/unit/db.test.js` shared `%TEMP%/clarifactu.db` across runs (never closed, so never deleted) → flaky chain test.
+- Extra request mid-task: selection bar in Facturas shows the total and the tax base of the selected invoices.
+- Extra request: duplicate an expense (today's date; supplier invoice number and attachment not copied, since deleting
+  an expense deletes its file).
+- Not verified for real: sending a reminder through Gmail (the modal and templates are tested, not the SMTP send); the
+  libros registro follow the required content but not AEAT's official import template; 347 rules worth checking with a gestoría.
+
+---
+
+# (Anterior) Fix implicit state machine gaps (2026-11-08) — hecho, commit e14b066, publicado en v1.2.4
+
+- VeriFactu: registered records final; invalidation clears the chain after; true chain tail; R1 hash/XML; chain-order submission
+  with previous record data; functions moved to `src/verifactu.js`
+- Credit notes: yearly counter reset; atomic rectified mark; cleared on delete
+- Payment: shared overdue helper

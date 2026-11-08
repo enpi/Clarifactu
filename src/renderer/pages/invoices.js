@@ -108,6 +108,9 @@ async function renderInvoices(container) {
       </div>
       <div id="bulk-action-bar" style="display:none;align-items:center;gap:10px;padding:8px 16px;background:var(--primary);color:#fff;font-size:13px;font-weight:500;">
         <span class="bulk-count"></span>
+        <span style="opacity:.6;">·</span>
+        <span class="bulk-sum" style="font-weight:700;"></span>
+        <span class="bulk-base" style="opacity:.85;font-weight:400;"></span>
         <div style="flex:1;"></div>
         <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);" id="bulk-paid-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
@@ -116,6 +119,10 @@ async function renderInvoices(container) {
         <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);" id="bulk-email-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           Enviar email
+        </button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);" id="bulk-reminder-btn" title="Recordatorio de cobro a las facturas vencidas seleccionadas">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Recordatorio
         </button>
         <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);" id="bulk-pdf-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -216,6 +223,7 @@ async function renderInvoices(container) {
   document.getElementById('bulk-delete-btn').addEventListener('click', () => bulkDeleteInvoices());
   document.getElementById('bulk-pdf-btn').addEventListener('click', () => bulkDownloadPDFs());
   document.getElementById('bulk-email-btn').addEventListener('click', () => bulkSendEmails());
+  document.getElementById('bulk-reminder-btn').addEventListener('click', () => bulkSendEmails('reminder'));
   document.getElementById('bulk-paid-btn').addEventListener('click', () => bulkMarkAsPaid());
 }
 
@@ -339,6 +347,17 @@ function updateBulkBar() {
   bar.style.display = count > 0 ? 'flex' : 'none';
   const countEl = bar.querySelector('.bulk-count');
   if (countEl) countEl.textContent = `${count} factura${count !== 1 ? 's' : ''} seleccionada${count !== 1 ? 's' : ''}`;
+  // Income of the selection (also invoices selected on other pages of the list)
+  const sumEl = bar.querySelector('.bulk-sum');
+  if (sumEl) {
+    const selected = allInvoicesData.filter(inv => selectedInvoiceIds.has(inv.id));
+    const total = selected.reduce((s, inv) => s + (Number(inv.total) || 0), 0);
+    const base = selected.reduce((s, inv) => s + (Number(inv.subtotal) || 0), 0);
+    sumEl.textContent = count > 0 ? `Total ${formatCurrency(total)}` : '';
+    sumEl.title = `Base imponible (ingresos sin IVA): ${formatCurrency(base)}`;
+    const baseEl = bar.querySelector('.bulk-base');
+    if (baseEl) baseEl.textContent = count > 0 && Math.abs(total - base) > 0.005 ? `· base ${formatCurrency(base)}` : '';
+  }
   // Sync select-all
   const allCb = document.getElementById('inv-select-all');
   if (allCb) {
@@ -401,6 +420,7 @@ function renderInvoicesTable(invoices) {
       <td style="text-align:center;">
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
           ${paymentBadge(inv)}
+          ${inv.reminder_sent_at && inv.payment_status !== 'pagada' ? `<span style="font-size:10px;color:var(--text-secondary);" title="Último recordatorio de cobro enviado">Recordada ${formatDate(inv.reminder_sent_at.split(' ')[0])}</span>` : ''}
           ${inv.payment_status === 'pagada'
             ? `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px;" onclick="togglePayment(${inv.id}, 'pendiente')">Desmarcar</button>`
             : `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px;color:#059669;" onclick="togglePayment(${inv.id}, 'pagada')">Marcar cobrada</button>`
@@ -422,6 +442,9 @@ function renderInvoicesTable(invoices) {
           <button class="btn btn-ghost btn-sm btn-icon" title="Exportar PDF" onclick="exportInvoicePDF(${inv.id})">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </button>
+          ${inv.client_email && isOverdue(inv) ? `<button class="btn btn-ghost btn-sm btn-icon" title="Enviar recordatorio de cobro" onclick="sendInvoiceEmail(${inv.id}, 'reminder')" style="color:#d97706;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>` : ''}
           ${inv.client_email ? `<button class="btn btn-ghost btn-sm btn-icon" title="Enviar por email" onclick="sendInvoiceEmail(${inv.id})">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           </button>` : ''}
@@ -460,7 +483,33 @@ async function togglePayment(id, newStatus) {
   await loadInvoices();
 }
 
-async function sendInvoiceEmail(id) {
+// Emails sent with an invoice attached: the invoice itself, or a payment reminder
+const EMAIL_KINDS = {
+  invoice: {
+    title: 'Enviar factura por email', subject: c => c.default_subject, body: c => c.default_body,
+    action: 'email_enviado', sent: 'Factura enviada', mark: id => window.api.invoices.markEmailSent(id)
+  },
+  reminder: {
+    title: 'Enviar recordatorio de cobro', subject: c => c.reminder_subject, body: c => c.reminder_body,
+    action: 'recordatorio_enviado', sent: 'Recordatorio enviado', mark: id => window.api.invoices.markReminderSent(id)
+  }
+};
+
+function daysSince(isoDate) {
+  return Math.max(0, Math.floor((Date.now() - new Date(isoDate + 'T00:00:00')) / 86400000));
+}
+
+function interpolateEmail(tpl, invoice) {
+  return (tpl || '')
+    .replace(/\{numero\}/g, invoice.invoice_number)
+    .replace(/\{cliente\}/g, invoice.client_name || '')
+    .replace(/\{total\}/g, formatCurrency(invoice.total))
+    .replace(/\{fecha\}/g, formatDate(invoice.date))
+    .replace(/\{dias\}/g, String(daysSince(invoice.date)));
+}
+
+async function sendInvoiceEmail(id, kind = 'invoice') {
+  const K = EMAIL_KINDS[kind];
   const [invoice, items, business, emailCfg] = await Promise.all([
     window.api.invoices.getById(id),
     window.api.invoiceItems.getByInvoice(id),
@@ -477,19 +526,10 @@ async function sendInvoiceEmail(id) {
   const clientEmail = invoice.client_email || '';
   const clientName = invoice.client_name || '';
 
-  // Interpolate template variables
-  function interpolate(tpl) {
-    return (tpl || '')
-      .replace(/\{numero\}/g, invoice.invoice_number)
-      .replace(/\{cliente\}/g, clientName)
-      .replace(/\{total\}/g, formatCurrency(invoice.total))
-      .replace(/\{fecha\}/g, formatDate(invoice.date));
-  }
+  const subject = interpolateEmail(K.subject(emailCfg), invoice);
+  const body = interpolateEmail(K.body(emailCfg), invoice);
 
-  const subject = interpolate(emailCfg.default_subject);
-  const body = interpolate(emailCfg.default_body);
-
-  openModal('Enviar factura por email', `
+  openModal(K.title, `
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="form-group" style="margin-bottom:0;">
         <label class="form-label">Destinatario</label>
@@ -543,11 +583,11 @@ async function sendInvoiceEmail(id) {
     });
 
     if (result.success) {
-      showToast(`Factura enviada a ${toEmail}`, 'success');
+      showToast(`${K.sent} a ${toEmail}`, 'success');
       closeModal();
-      await window.api.invoices.markEmailSent(id);
+      await K.mark(id);
       await window.api.activityLog.add({
-        action_type: 'email_enviado',
+        action_type: K.action,
         invoice_id: id,
         invoice_number: invoice.invoice_number,
         client_name: invoice.client_name || '',
@@ -727,7 +767,8 @@ async function bulkDownloadPDFs() {
   }
 }
 
-async function bulkSendEmails() {
+async function bulkSendEmails(kind = 'invoice') {
+  const K = EMAIL_KINDS[kind];
   const ids = [...selectedInvoiceIds];
   const [business, emailCfg] = await Promise.all([
     window.api.settings.getBusiness(),
@@ -741,25 +782,27 @@ async function bulkSendEmails() {
   }
 
   // Load all invoices to check which have email
-  const invoices = await Promise.all(ids.map(id => window.api.invoices.getById(id)));
+  const all = await Promise.all(ids.map(id => window.api.invoices.getById(id)));
+  // Reminders only make sense for overdue invoices
+  const invoices = kind === 'reminder' ? all.filter(isOverdue) : all;
+  const notOverdue = all.length - invoices.length;
   const withEmail = invoices.filter(inv => inv.client_email);
   const withoutEmail = invoices.filter(inv => !inv.client_email);
+  if (withEmail.length === 0) {
+    showToast(kind === 'reminder' ? 'Ninguna de las facturas seleccionadas está vencida y tiene email de cliente' : 'Ninguna factura seleccionada tiene email de cliente', 'warning');
+    return;
+  }
 
   const confirmed = await showConfirm(
-    `Enviar ${withEmail.length} email${withEmail.length !== 1 ? 's' : ''}`,
+    kind === 'reminder'
+      ? `Enviar ${withEmail.length} recordatorio${withEmail.length !== 1 ? 's' : ''} de cobro`
+      : `Enviar ${withEmail.length} email${withEmail.length !== 1 ? 's' : ''}`,
     `Se enviará cada factura al email del cliente correspondiente.` +
-    (withoutEmail.length > 0 ? `\n\n${withoutEmail.length} factura${withoutEmail.length !== 1 ? 's' : ''} sin email de cliente serán omitidas.` : ''),
+    (withoutEmail.length > 0 ? `\n\n${withoutEmail.length} factura${withoutEmail.length !== 1 ? 's' : ''} sin email de cliente serán omitidas.` : '') +
+    (notOverdue > 0 ? `\n\n${notOverdue} factura${notOverdue !== 1 ? 's' : ''} no vencida${notOverdue !== 1 ? 's' : ''} serán omitidas.` : ''),
     'Enviar'
   );
   if (!confirmed) return;
-
-  function interpolate(tpl, invoice) {
-    return (tpl || '')
-      .replace(/\{numero\}/g, invoice.invoice_number)
-      .replace(/\{cliente\}/g, invoice.client_name || '')
-      .replace(/\{total\}/g, formatCurrency(invoice.total))
-      .replace(/\{fecha\}/g, formatDate(invoice.date));
-  }
 
   showToast(`Enviando ${withEmail.length} email${withEmail.length !== 1 ? 's' : ''}...`, 'info');
   let ok = 0, fail = 0;
@@ -772,14 +815,14 @@ async function bulkSendEmails() {
         invoiceNumber: invoice.invoice_number,
         toEmail: invoice.client_email,
         toName: invoice.client_name || '',
-        subject: interpolate(emailCfg.default_subject, invoice),
-        body: interpolate(emailCfg.default_body, invoice)
+        subject: interpolateEmail(K.subject(emailCfg), invoice),
+        body: interpolateEmail(K.body(emailCfg), invoice)
       });
       if (result.success) {
         ok++;
-        await window.api.invoices.markEmailSent(invoice.id);
+        await K.mark(invoice.id);
         await window.api.activityLog.add({
-          action_type: 'email_enviado',
+          action_type: K.action,
           invoice_id: invoice.id,
           invoice_number: invoice.invoice_number,
           client_name: invoice.client_name || '',
@@ -883,6 +926,12 @@ function getTemplateVars(template) {
   }
 }
 
+// Legal note required on invoices without VAT (e.g. exempt sanitary services)
+function ivaExemptionNote(invoice, business) {
+  const noVat = !(Number(invoice.tax_rate) > 0) && !(Number(invoice.tax_amount) > 0);
+  return noVat && business.iva_exempt_enabled && business.iva_exempt_text ? business.iva_exempt_text : '';
+}
+
 function generateInvoiceHTML(invoice, items, business, qrDataUrl = null) {
   const logoHtml = business.logo
     ? `<img src="${business.logo}" class="inv-logo" alt="Logo">`
@@ -974,6 +1023,9 @@ function generateInvoiceHTML(invoice, items, business, qrDataUrl = null) {
           <span>${formatCurrency(invoice.total)}</span>
         </div>
       </div>
+
+      ${ivaExemptionNote(invoice, business) ? `
+        <div class="inv-iva-exempt" style="margin-top:14px;font-size:12px;color:#64748b;font-style:italic;">${escapeHtml(ivaExemptionNote(invoice, business))}</div>` : ''}
 
       <div class="inv-qr-block">
         <div style="flex:1;">
@@ -1109,6 +1161,9 @@ function generatePDFDocument(invoice, items, business, qrDataUrl = null) {
     </div>
   </div>
 
+  ${ivaExemptionNote(invoice, business) ? `
+    <div class="inv-iva-exempt" style="margin-top:24px;font-size:12px;color:#64748b;font-style:italic;">${escapeHtml(ivaExemptionNote(invoice, business))}</div>
+  ` : ''}
   ${invoice.notes ? `
     <div style="margin-top:32px;padding:16px;background:#f8fafc;border-radius:8px;border-left:3px solid ${tpl.accent};">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:6px;">Notas</div>

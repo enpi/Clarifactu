@@ -7,27 +7,20 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 
-const DB_DIR = os.tmpdir();
-const DB_PATH = path.join(DB_DIR, `clarifactu_test_${Date.now()}.db`);
+// A new folder per run: a shared tmp database used to survive between runs
+// (it was never closed, so Windows couldn't delete it) and leak state into tests.
+const DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'clarifactu-db-test-'));
 
 let db;
 
 beforeAll(() => {
   db = require('../../src/database/db');
   db.initialize(DB_DIR);
-  // Override the db path used in initialize – since db.js builds the path
-  // internally from userDataPath, we pass the tmpdir and the file ends up at
-  // DB_PATH (tmpdir/clarifactu.db). Rename so we can clean up predictably.
 });
 
 afterAll(() => {
-  // Clean up the temporary database file(s)
-  const defaultTmpDb = path.join(DB_DIR, 'clarifactu.db');
-  [defaultTmpDb, DB_PATH].forEach(p => {
-    try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) {}
-    try { if (fs.existsSync(p + '-wal')) fs.unlinkSync(p + '-wal'); } catch (_) {}
-    try { if (fs.existsSync(p + '-shm')) fs.unlinkSync(p + '-shm'); } catch (_) {}
-  });
+  try { db.close(); } catch (_) {}
+  try { fs.rmSync(DB_DIR, { recursive: true, force: true }); } catch (_) {}
 });
 
 // ─── Clients ──────────────────────────────────────────────────────────────────

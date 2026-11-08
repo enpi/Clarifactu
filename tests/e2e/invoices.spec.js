@@ -3,7 +3,7 @@
  * This is the most important E2E test file.
  */
 
-const { test, expect } = require('./fixtures');
+const { test, expect, openReadyWindow, selectOptionContaining } = require('./fixtures');
 
 // Helper: navigate to Clients and create a temporary client via the UI
 async function createTestClient(window, name = 'Cliente Factura E2E') {
@@ -37,14 +37,12 @@ test.describe('Invoices', () => {
 
   test.beforeAll(async ({ app }) => {
     // Create the test client before the suite runs
-    const page = await app.firstWindow();
-    await page.waitForLoadState('domcontentloaded');
-    await page.waitForTimeout(1500);
+    const page = await openReadyWindow(app);
     await createTestClient(page, CLIENT_NAME);
   });
 
   test.afterAll(async ({ app }) => {
-    const page = await app.firstWindow();
+    const page = await openReadyWindow(app);
     await deleteTestClient(page, CLIENT_NAME);
   });
 
@@ -62,7 +60,7 @@ test.describe('Invoices', () => {
     await window.waitForSelector('#invoice-client-select');
 
     const select = window.locator('#invoice-client-select');
-    await select.selectOption({ label: new RegExp(CLIENT_NAME) });
+    await selectOptionContaining(select, CLIENT_NAME);
     await window.waitForTimeout(400);
 
     // Client info preview should appear
@@ -76,7 +74,7 @@ test.describe('Invoices', () => {
 
     // Select client
     const select = window.locator('#invoice-client-select');
-    await select.selectOption({ label: new RegExp(CLIENT_NAME) });
+    await selectOptionContaining(select, CLIENT_NAME);
     await window.waitForTimeout(300);
 
     // Choose "custom concept"
@@ -103,7 +101,7 @@ test.describe('Invoices', () => {
 
     // Select client
     const select = window.locator('#invoice-client-select');
-    await select.selectOption({ label: new RegExp(CLIENT_NAME) });
+    await selectOptionContaining(select, CLIENT_NAME);
     await window.waitForTimeout(300);
 
     // Get the generated invoice number before saving
