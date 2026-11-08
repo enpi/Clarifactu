@@ -168,7 +168,7 @@ let comparisonChart = null;
 
 async function loadDashboardData(year) {
   const compareYear = parseInt(document.getElementById('dash-compare-year')?.value || year - 1);
-  const [stats, monthly, fiscal, topClients, docStats, comparison, expSummary, m347] = await Promise.all([
+  const [stats, monthly, fiscal, topClients, docStats, comparison, expSummary, m347, m130] = await Promise.all([
     window.api.dashboard.getStats(),
     window.api.dashboard.getMonthlyData(year),
     window.api.dashboard.getFiscalSummary(year),
@@ -176,7 +176,8 @@ async function loadDashboardData(year) {
     window.api.dashboard.getDocumentStats(),
     window.api.dashboard.getYearComparison(year, compareYear),
     window.api.expenses.getSummaryByYear(year),
-    window.api.dashboard.get347(year)
+    window.api.dashboard.get347(year),
+    window.api.dashboard.getModelo130(year)
   ]);
 
   renderStats(stats, docStats);
@@ -184,7 +185,7 @@ async function loadDashboardData(year) {
   renderCharts(monthly, year);
   renderTopClients(topClients, year);
   renderComparisonChart(comparison);
-  renderFiscalSummary(fiscal, year, expSummary, m347);
+  renderFiscalSummary(fiscal, year, expSummary, m347, m130);
   await Promise.all([loadRecentInvoices(), loadActivityLog()]);
 
   const compareSelect = document.getElementById('dash-compare-year');
@@ -403,7 +404,72 @@ async function export347(year) {
   if (result && result.success) showToast('Modelo 347 exportado', 'success');
 }
 
-function renderFiscalSummary(quarters, year, expSummary = [], m347 = null) {
+// Modelo 130 as in the official form: cumulative from 1 January (see src/modelo130.js)
+function renderM130Panel(m, year) {
+  if (!m) return '';
+  const fc = formatCurrency;
+  const th = (txt, title = '') => `<th title="${title}" style="padding:8px 10px;text-align:right;font-weight:600;color:var(--text-secondary);font-size:11px;white-space:nowrap;">${txt}</th>`;
+  const td = (v, extra = '') => `<td style="padding:9px 10px;text-align:right;white-space:nowrap;${extra}">${v}</td>`;
+  const neg = v => v < 0 ? `<span style="color:#059669;">${fc(v)}</span>` : fc(v);
+  const paidYear = m.rows.reduce((s, r) => s + r.aIngresar, 0);
+  const c13 = m.rows[0] ? m.rows[0].c13 : 0;
+  const c13Note = m.prevYearNet == null
+    ? `No hay datos de ${year - 1} en Clarifactu, así que no se aplica la <strong>minoración de la casilla 13</strong>. Si en ${year - 1} tu rendimiento neto fue de 12.000 € o menos (o no tuviste actividad), puedes restar entre 25 y 100 € por trimestre.`
+    : `Casilla 13: rendimiento neto de ${year - 1} según Clarifactu, ${fc(m.prevYearNet)} → ${c13 > 0 ? `minoración de <strong>${fc(c13)}</strong> por trimestre` : 'sin minoración (más de 12.000 €)'}.`;
+  return `
+    <div style="padding:12px 16px 8px;font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-bottom:1px solid var(--border);line-height:1.6;">
+      Estimación directa · Pago fraccionado del IRPF. Cada trimestre declara lo <strong>acumulado desde el 1 de enero</strong>
+      y descuenta lo ya pagado en los trimestres anteriores (casilla 05).
+    </div>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:var(--bg-secondary);">
+          <th style="padding:8px 10px 8px 16px;text-align:left;"></th>
+          ${th('01 Ingresos', 'Ingresos computables desde el 1 de enero')}
+          ${th('02 Gastos', 'Gastos fiscalmente deducibles desde el 1 de enero')}
+          ${th('03 Rend. neto', '01 − 02')}
+          ${th('04 20 %', '20 % de la casilla 03 si es positiva')}
+          ${th('05 Pagado antes', 'Suma de las casillas 07 positivas de los trimestres anteriores')}
+          ${th('06 Retenciones', 'Retenciones soportadas desde el 1 de enero')}
+          ${th('07', '04 − 05 − 06')}
+          ${th('13 Minoración', 'Art. 110.3.c del Reglamento del IRPF')}
+          ${th('15 Negativos ant.', 'Resultados negativos de trimestres anteriores')}
+          ${th('19 Resultado', 'Resultado de la declaración')}
+        </tr>
+      </thead>
+      <tbody>
+        ${m.rows.map(r => `
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:9px 10px 9px 16px;font-weight:600;">${r.label}</td>
+            ${td(fc(r.c01))}
+            ${td(fc(r.c02))}
+            ${td(neg(r.c03))}
+            ${td(fc(r.c04))}
+            ${td(fc(r.c05))}
+            ${td(fc(r.c06))}
+            ${td(neg(r.c07))}
+            ${td(fc(r.c13))}
+            ${td(fc(r.c15))}
+            ${td(`<span style="font-weight:700;color:${r.c19 > 0 ? '#dc2626' : r.c19 < 0 ? '#059669' : 'var(--text-secondary)'};">${fc(r.c19)}</span>`, 'padding-right:16px;')}
+          </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border);background:var(--bg-secondary);">
+          <td colspan="10" style="padding:9px 10px 9px 16px;font-weight:700;">Total a ingresar en ${year}</td>
+          ${td(`<span style="font-weight:700;">${fc(paidYear)}</span>`, 'padding-right:16px;')}
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+    <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);line-height:1.6;">
+      19 &gt; 0: importe a ingresar · 19 negativo: se descuenta en los trimestres siguientes del mismo año (casilla 15) · 19 = 0: sin pago.<br>
+      ${c13Note}<br>
+      No incluye la casilla 16 (deducción por vivienda habitual adquirida antes de 2013). Revísalo con tu gestoría antes de presentarlo.
+    </div>`;
+}
+
+function renderFiscalSummary(quarters, year, expSummary = [], m347 = null, m130 = null) {
   const el = document.getElementById('fiscal-summary');
   if (!el) return;
 
@@ -412,26 +478,12 @@ function renderFiscalSummary(quarters, year, expSummary = [], m347 = null) {
   const fc = formatCurrency;
   const dash = `<span style="color:var(--text-secondary)">—</span>`;
 
-  // Pre-compute Modelo 130 casillas per quarter
-  const m130 = quarters.map(q => {
-    const c01 = q.base || 0;
-    const c02 = q.gastos_deducibles || 0;
-    const c03 = Math.max(c01 - c02, 0);
-    const c04 = c03 * 0.20;
-    const c05 = q.irpf || 0;
-    const c06 = c04 - c05;
-    return { ...q, c01, c02, c03, c04, c05, c06 };
-  });
-
   const totalBase = quarters.reduce((s, q) => s + (q.base || 0), 0);
   const totalIva  = quarters.reduce((s, q) => s + (q.iva || 0), 0);
   const totalIrpf = quarters.reduce((s, q) => s + (q.irpf || 0), 0);
   const totalGastos = quarters.reduce((s, q) => s + (q.gastos_deducibles || 0), 0);
   const totalGastosIva = quarters.reduce((s, q) => s + (q.gastos_iva || 0), 0);
 
-  const totalC03 = Math.max(totalBase - totalGastos, 0);
-  const totalC04 = totalC03 * 0.20;
-  const totalC06 = totalC04 - totalIrpf;
 
   const exportMenuItems = `
     <button onclick="exportFiscalCSV(${year});document.getElementById('fiscal-export-menu').style.display='none';" class="fiscal-export-item">
@@ -531,49 +583,7 @@ function renderFiscalSummary(quarters, year, expSummary = [], m347 = null) {
 
     <!-- TAB: Modelo 130 -->
     <div class="fiscal-fpanel" id="ftab-m130" style="padding:0;display:none;">
-      <div style="padding:12px 16px 8px;font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-bottom:1px solid var(--border);">
-        Estimación Directa — Pagos fraccionados IRPF (trimestral). Casilla 06 negativa se acumula al siguiente trimestre.
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead>
-          <tr style="background:var(--bg-secondary);">
-            ${th('','left')}
-            ${th('C.01 Ingresos')}
-            ${th('C.02 Gastos')}
-            ${th('C.03 Diferencia')}
-            ${th('C.04 (20% × C.03)')}
-            ${th('C.05 Retenciones')}
-            ${th('C.06 Resultado')}
-          </tr>
-        </thead>
-        <tbody>
-          ${m130.map(q => `
-            <tr style="border-top:1px solid var(--border);">
-              <td style="padding:9px 12px 9px 16px;font-weight:600;">${q.label}</td>
-              ${td(fc(q.c01))}
-              ${td(q.c02 > 0 ? `<span style="color:#dc2626;">${fc(q.c02)}</span>` : dash)}
-              ${td(fc(q.c03))}
-              ${td(fc(q.c04))}
-              ${td(q.c05 > 0 ? `<span style="color:#7c3aed;">${fc(q.c05)}</span>` : dash)}
-              ${td(`<span style="font-weight:600;color:${q.c06 > 0 ? '#dc2626' : q.c06 < 0 ? '#059669' : 'var(--text-secondary)'};">${fc(q.c06)}</span>`, 'right', 'padding-right:16px;')}
-            </tr>
-          `).join('')}
-        </tbody>
-        <tfoot>
-          <tr style="border-top:2px solid var(--border);background:var(--bg-secondary);">
-            <td style="padding:9px 12px 9px 16px;font-weight:700;">Total ${year}</td>
-            ${td(`<span style="font-weight:700;">${fc(totalBase)}</span>`)}
-            ${td(totalGastos > 0 ? `<span style="font-weight:700;color:#dc2626;">${fc(totalGastos)}</span>` : dash)}
-            ${td(`<span style="font-weight:700;">${fc(totalC03)}</span>`)}
-            ${td(`<span style="font-weight:700;">${fc(totalC04)}</span>`)}
-            ${td(totalIrpf > 0 ? `<span style="font-weight:700;color:#7c3aed;">${fc(totalIrpf)}</span>` : dash)}
-            ${td(`<span style="font-weight:700;color:${totalC06>0?'#dc2626':totalC06<0?'#059669':'var(--text-secondary)'};">${fc(totalC06)}</span>`, 'right', 'padding-right:16px;')}
-          </tr>
-        </tfoot>
-      </table>
-      <div style="padding:10px 16px;font-size:11.5px;color:var(--text-secondary);border-top:1px solid var(--border);">
-        C.06 &gt; 0 = importe a ingresar en Hacienda · C.06 &lt; 0 = retenciones superiores al pago, resultado 0 en el modelo
-      </div>
+      ${renderM130Panel(m130, year)}
     </div>
 
     <!-- TAB: Modelo 303 -->

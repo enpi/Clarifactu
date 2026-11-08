@@ -135,3 +135,40 @@ describe('Excel writer', () => {
     expect(name).not.toMatch(/[[\]:*?/\\]/);
   });
 });
+
+describe('modelo 130 from the database', () => {
+  test('uses the previous year in Clarifactu for casilla 13, and is cumulative', () => {
+    // The only Y-1 data is a 9000 € invoice and no expenses → net 9000 → 100 € per quarter
+    const m = db.fiscal.getModelo130(Y);
+    expect(m.prevYearNet).toBe(9000);
+    expect(m.rows.map(r => r.c13)).toEqual([100, 100, 100, 100]);
+    // Income is cumulative: Q4's casilla 01 is the whole year's base
+    const { ingresos } = db.fiscal.getLibroRegistro(Y);
+    expect(m.rows[3].c01).toBe(Math.round(ingresos.reduce((s, r) => s + r.subtotal, 0) * 100) / 100);
+    expect(m.rows[1].c01).toBeGreaterThanOrEqual(m.rows[0].c01);
+  });
+
+  test('no data for the previous year → unknown, no reduction', () => {
+    const m = db.fiscal.getModelo130(Y - 1);
+    expect(m.prevYearNet).toBeNull();
+    expect(m.rows[0].c13).toBe(0);
+  });
+});
+
+describe('invoices by period (exports)', () => {
+  const months = list => list.map(i => i.date.slice(5, 7)).sort();
+  test('a month', () => {
+    expect(months(db.invoices.getByPeriod(Y, '05'))).toEqual(['05']);
+  });
+  test('a quarter', () => {
+    expect(months(db.invoices.getByPeriod(Y, 'T3'))).toEqual(['07', '08', '09']);
+  });
+  test('the whole year, and a month across all years', () => {
+    expect(db.invoices.getByPeriod(Y)).toHaveLength(7);
+    expect(db.invoices.getByPeriod(null, '12').map(i => i.date)).toEqual([`${Y - 1}-12-31`]);
+  });
+  test('an invalid period is rejected', () => {
+    expect(() => db.invoices.getByPeriod(Y, '13')).toThrow(/Periodo no válido/);
+    expect(() => db.invoices.getByPeriod(Y, "01' OR 1=1")).toThrow(/Periodo no válido/);
+  });
+});

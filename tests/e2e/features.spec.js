@@ -109,6 +109,18 @@ test.describe('New features', () => {
     await expect(window.locator('#ftab-m347')).toContainText('Gran Cliente 347');
   });
 
+  test('the Modelo 130 tab uses the official casillas, cumulative from 1 January', async ({ window }) => {
+    await window.locator('.nav-item[data-page="dashboard"]').click();
+    await window.locator('.dash-tab[data-tab="fiscal"]').click();
+    await window.locator('.fiscal-subtab[data-ftab="m130"]').click();
+    const panel = window.locator('#ftab-m130');
+    for (const h of ['01 Ingresos', '02 Gastos', '03 Rend. neto', '04 20 %', '05 Pagado antes', '06 Retenciones', '07', '13 Minoración', '15 Negativos ant.', '19 Resultado']) {
+      await expect(panel.locator('th', { hasText: h }).first()).toBeVisible();
+    }
+    await expect(panel).toContainText('acumulado desde el 1 de enero');
+    await expect(panel).toContainText('Total a ingresar en');
+  });
+
   test('clients can be imported from a CSV, skipping duplicates', async ({ app, window }) => {
     // The existing client the CSV repeats (each test sets up its own data)
     await window.evaluate(() => window.api.clients.create({ name: 'Ya existente', nif: '12345678Z', address: '', email: '', phone: '', notes: '' }));
@@ -127,6 +139,33 @@ test.describe('New features', () => {
     await expect(window.locator('.toast').last()).toContainText('2 clientes importados');
     await expect(window.locator('#clients-tbody')).toContainText('Importada Uno');
     await expect(window.locator('#clients-tbody')).toContainText('Importada Dos');
+  });
+});
+
+test.describe('Invoice filters', () => {
+  test('invoices can be filtered by month and by quarter', async ({ window }) => {
+    const Y = new Date().getFullYear() - 1; // a full past year, so every month exists
+    await makeInvoice(window, { number: 'E2E-FEB', date: `${Y}-02-10` });
+    await makeInvoice(window, { number: 'E2E-MAY', date: `${Y}-05-20` });
+    await makeInvoice(window, { number: 'E2E-NOV', date: `${Y}-11-05` });
+
+    await window.locator('.nav-item[data-page="invoices"]').click();
+    await window.locator('#invoice-year-filter').selectOption(String(Y));
+    const tbody = window.locator('#invoices-tbody');
+    await expect(tbody).toContainText('E2E-FEB');
+    await expect(tbody).toContainText('E2E-NOV');
+
+    await window.locator('#invoice-period-filter').selectOption('05');
+    await expect(tbody).toContainText('E2E-MAY');
+    await expect(tbody).not.toContainText('E2E-FEB');
+    await expect(tbody).not.toContainText('E2E-NOV');
+
+    await window.locator('#invoice-period-filter').selectOption('T1');
+    await expect(tbody).toContainText('E2E-FEB');
+    await expect(tbody).not.toContainText('E2E-MAY');
+
+    await window.locator('#invoice-period-filter').selectOption('');
+    await expect(tbody).toContainText('E2E-NOV');
   });
 });
 

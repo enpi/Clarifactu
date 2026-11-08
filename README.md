@@ -72,7 +72,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - Contador de importe pendiente visible en la barra de filtros
 
 #### Filtros y exportación
-- Filtro por año, estado de cobro y texto libre
+- Filtro por año, **mes o trimestre**, estado de cobro y texto libre (las exportaciones a CSV, Excel y PDF respetan el periodo elegido)
 - Ordenación por fecha, número, cliente o importe
 - **Exportación a CSV** compatible con Excel (con BOM UTF-8), incluyendo todos los campos y estado de cobro
 
@@ -102,7 +102,7 @@ Aplicación de escritorio para gestión de facturación orientada a profesionale
 - **Registro de actividad reciente** (últimas 25 acciones)
 - **Resumen fiscal trimestral** con cuatro pestañas:
   - **Ingresos / Gastos**: base imponible, gastos deducibles, resultado neto e IVA neto por trimestre
-  - **Modelo 130**: casillas C.01 (ingresos), C.02 (gastos deducibles), C.03 (diferencia), C.04 (20% × C.03), C.05 (retenciones IRPF), C.06 (resultado a ingresar) — coloreado en verde/rojo
+  - **Modelo 130**: casillas oficiales, **acumuladas desde el 1 de enero** como en el modelo de la AEAT: 01 ingresos, 02 gastos deducibles, 03 rendimiento neto, 04 20 % de 03, 05 pagos de trimestres anteriores, 06 retenciones, 07 pago fraccionado previo, 13 minoración (art. 110.3.c del Reglamento, según el rendimiento neto del año anterior en Clarifactu), 15 resultados negativos de trimestres anteriores y 19 resultado. No incluye la casilla 16 (vivienda habitual anterior a 2013)
   - **Modelo 303**: IVA repercutido, IVA soportado deducible y resultado a ingresar/compensar
   - **Modelo 100 / Renta**: gastos agrupados por casilla del Modelo 100 con totales anuales
   - **Modelo 347**: clientes y proveedores con más de 3.005,06 € (IVA incluido) en el año, con desglose trimestral; agrupa por NIF, avisa de los que no tienen NIF y de los alquileres, y excluye las facturas con retención de IRPF (van en el modelo 190) y las cuotas de Seguridad Social y tributos

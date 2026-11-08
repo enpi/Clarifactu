@@ -214,8 +214,16 @@ ipcMain.handle('invoices:getByClient', (e, clientId) => db.invoices.getByClient(
 ipcMain.handle('invoices:getOverdue', (e, days) => db.invoices.getOverdue(days));
 ipcMain.handle('invoices:getByRectifiedId', (e, id) => db.invoices.getByRectifiedId(id));
 
-ipcMain.handle('invoices:exportCSV', async (e, year) => {
-  const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
+const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+// File name and title parts for an exported period: 2026 + '03' → "-2026-03" / "marzo 2026"
+const periodSuffix = (year, period) => [year, period].filter(Boolean).map(v => '-' + v).join('');
+const periodLabel = (year, period) => [
+  period ? (period.startsWith('T') ? `${period.slice(1)}.º trimestre` : MONTH_NAMES[Number(period) - 1]) : '',
+  year || ''
+].filter(Boolean).join(' ');
+
+ipcMain.handle('invoices:exportCSV', async (e, year, period = '') => {
+  const list = db.invoices.getByPeriod(year, period);
   const header = 'Número,Fecha,Cliente,Base imponible,IVA %,Cuota IVA,IRPF %,Cuota IRPF,Total,Estado cobro,Fecha cobro';
   const rows = list.map(inv => [
     inv.invoice_number,
@@ -234,7 +242,7 @@ ipcMain.handle('invoices:exportCSV', async (e, year) => {
   const csv = [header, ...rows].join('\r\n');
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exportar facturas a CSV',
-    defaultPath: `facturas${year ? '-' + year : ''}.csv`,
+    defaultPath: `facturas${periodSuffix(year, period)}.csv`,
     filters: [{ name: 'CSV (Excel)', extensions: ['csv'] }]
   });
   if (result.canceled) return { success: false };
@@ -243,8 +251,8 @@ ipcMain.handle('invoices:exportCSV', async (e, year) => {
   return { success: true };
 });
 
-ipcMain.handle('invoices:exportExcel', async (e, year) => {
-  const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
+ipcMain.handle('invoices:exportExcel', async (e, year, period = '') => {
+  const list = db.invoices.getByPeriod(year, period);
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const headers = ['Número','Fecha','Cliente','Base imponible','IVA %','Cuota IVA','IRPF %','Cuota IRPF','Total','Estado cobro','Fecha cobro'];
   const headerRow = headers.map(h => `<Cell><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
@@ -260,7 +268,7 @@ ipcMain.handle('invoices:exportExcel', async (e, year) => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Facturas"><Table><Row>${headerRow}</Row>${dataRows}</Table></Worksheet></Workbook>`;
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exportar facturas a Excel',
-    defaultPath: `facturas${year ? '-' + year : ''}.xls`,
+    defaultPath: `facturas${periodSuffix(year, period)}.xls`,
     filters: [{ name: 'Excel', extensions: ['xls'] }]
   });
   if (result.canceled) return { success: false };
@@ -269,11 +277,11 @@ ipcMain.handle('invoices:exportExcel', async (e, year) => {
   return { success: true };
 });
 
-ipcMain.handle('invoices:exportPDFSummary', async (e, year) => {
-  const list = year ? db.invoices.getByYear(year) : db.invoices.getAll();
+ipcMain.handle('invoices:exportPDFSummary', async (e, year, period = '') => {
+  const list = db.invoices.getByPeriod(year, period);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exportar listado de facturas a PDF',
-    defaultPath: `facturas${year ? '-' + year : ''}.pdf`,
+    defaultPath: `facturas${periodSuffix(year, period)}.pdf`,
     filters: [{ name: 'PDF', extensions: ['pdf'] }]
   });
   if (result.canceled) return { success: false, reason: 'cancelled' };
@@ -292,7 +300,7 @@ ipcMain.handle('invoices:exportPDFSummary', async (e, year) => {
     td{padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;}
     tr:nth-child(even) td{background:#fafafa;}
   </style></head><body>
-    <h1>Listado de facturas${year ? ' — ' + year : ''}</h1>
+    <h1>Listado de facturas${periodLabel(year, period) ? ' — ' + periodLabel(year, period) : ''}</h1>
     <p>Generado el ${new Date().toLocaleDateString('es-ES',{year:'numeric',month:'long',day:'numeric'})}</p>
     <table><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th style="text-align:right">Total</th><th style="text-align:center">Estado</th><th>Fecha cobro</th></tr></thead>
     <tbody>${rows}</tbody></table>
@@ -318,10 +326,10 @@ ipcMain.handle('dashboard:exportFiscalExcel', async (e, year) => {
     const vals = [`T${q.quarter}`, (q.base||0).toFixed(2), (q.iva||0).toFixed(2), (q.irpf||0).toFixed(2), q.count||0];
     return `<Row>${vals.map(v => `<Cell><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('')}</Row>`;
   }).join('');
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Modelo 130"><Table><Row>${headerRow}</Row>${dataRows}</Table></Worksheet></Workbook>`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Ingresos por trimestre"><Table><Row>${headerRow}</Row>${dataRows}</Table></Worksheet></Workbook>`;
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exportar resumen fiscal a Excel',
-    defaultPath: `modelo130-${year}.xls`,
+    defaultPath: `resumen-ingresos-${year}.xls`,
     filters: [{ name: 'Excel', extensions: ['xls'] }]
   });
   if (result.canceled) return { success: false };
@@ -334,7 +342,7 @@ ipcMain.handle('dashboard:exportFiscalPDF', async (e, year) => {
   const quarters = db.dashboard.getFiscalSummary(year);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exportar resumen fiscal a PDF',
-    defaultPath: `modelo130-${year}.pdf`,
+    defaultPath: `resumen-ingresos-${year}.pdf`,
     filters: [{ name: 'PDF', extensions: ['pdf'] }]
   });
   if (result.canceled) return { success: false, reason: 'cancelled' };
@@ -354,7 +362,7 @@ ipcMain.handle('dashboard:exportFiscalPDF', async (e, year) => {
     td{padding:10px 14px;border-bottom:1px solid #f1f5f9;}
     tr:nth-child(even) td{background:#fafafa;}
   </style></head><body>
-    <h1>Resumen fiscal — Modelo 130 / ${year}</h1>
+    <h1>Resumen de ingresos por trimestre / ${year}</h1>
     <p>Generado el ${new Date().toLocaleDateString('es-ES',{year:'numeric',month:'long',day:'numeric'})}</p>
     <table><thead><tr><th>Trimestre</th><th style="text-align:right">Base imponible</th><th style="text-align:right">IVA repercutido</th><th style="text-align:right">IRPF retenido</th><th style="text-align:center">Nº facturas</th></tr></thead>
     <tbody>${rows}</tbody></table>
@@ -496,6 +504,7 @@ function build347(year) {
 }
 
 ipcMain.handle('dashboard:get347', (e, year) => db.fiscal.get347(year));
+ipcMain.handle('dashboard:getModelo130', (e, year) => db.fiscal.getModelo130(year));
 ipcMain.handle('dashboard:exportLibros', (e, year) =>
   saveSpreadsheet('Exportar libros registro', `libros-registro-${year}.xls`, buildLibrosRegistro(year)));
 ipcMain.handle('dashboard:export347', (e, year) =>
@@ -507,25 +516,18 @@ ipcMain.handle('dashboard:exportModelos', async (e, year) => {
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const N = v => parseFloat(v || 0).toFixed(2);
 
-  // Modelo 130 sheet
-  const m130Headers = ['Trimestre','C.01 Ingresos íntegros','C.02 Gastos deducibles','C.03 Diferencia (01-02)','C.04 20% s/ C.03','C.05 Retenciones (IRPF)','C.06 Resultado (04-05)'];
-  const m130HRow = m130Headers.map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
-  const m130Rows = quarters.map(q => {
-    const c01 = q.base || 0;
-    const c02 = q.gastos_deducibles || 0;
-    const c03 = Math.max(c01 - c02, 0);
-    const c04 = c03 * 0.20;
-    const c05 = q.irpf || 0;
-    const c06 = c04 - c05;
-    return `<Row><Cell><Data ss:Type="String">${esc(q.label)}</Data></Cell>${[c01,c02,c03,c04,c05,c06].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
-  }).join('');
-  const m130TotalC01 = quarters.reduce((s,q)=>s+(q.base||0),0);
-  const m130TotalC02 = quarters.reduce((s,q)=>s+(q.gastos_deducibles||0),0);
-  const m130TotalC03 = Math.max(m130TotalC01 - m130TotalC02, 0);
-  const m130TotalC04 = m130TotalC03 * 0.20;
-  const m130TotalC05 = quarters.reduce((s,q)=>s+(q.irpf||0),0);
-  const m130TotalC06 = m130TotalC04 - m130TotalC05;
-  const m130Total = `<Row><Cell><Data ss:Type="String">TOTAL ${year}</Data></Cell>${[m130TotalC01,m130TotalC02,m130TotalC03,m130TotalC04,m130TotalC05,m130TotalC06].map(v=>`<Cell><Data ss:Type="Number">${N(v)}</Data></Cell>`).join('')}</Row>`;
+  // Modelo 130 sheet: official casillas, cumulative from 1 January (src/modelo130.js)
+  const m130 = db.fiscal.getModelo130(year);
+  const m130Cols = [['01 Ingresos (acum.)','c01'],['02 Gastos deducibles (acum.)','c02'],['03 Rendimiento neto','c03'],
+    ['04 20% s/ 03','c04'],['05 Pagos trimestres anteriores','c05'],['06 Retenciones (acum.)','c06'],['07 Pago fraccionado previo','c07'],
+    ['12','c12'],['13 Minoración','c13'],['14','c14'],['15 Negativos anteriores','c15'],['17','c17'],['19 Resultado','c19']];
+  const m130HRow = ['Trimestre', ...m130Cols.map(c => c[0])].map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('');
+  const m130Rows = m130.rows.map(r =>
+    `<Row><Cell><Data ss:Type="String">${esc(r.label)}</Data></Cell>${m130Cols.map(([, k]) => `<Cell><Data ss:Type="Number">${N(r[k])}</Data></Cell>`).join('')}</Row>`
+  ).join('');
+  const m130Total = `<Row><Cell><Data ss:Type="String">TOTAL A INGRESAR ${year}</Data></Cell>${m130Cols.map(([, k]) => k === 'c19'
+    ? `<Cell><Data ss:Type="Number">${N(m130.rows.reduce((s, r) => s + r.aIngresar, 0))}</Data></Cell>`
+    : '<Cell><Data ss:Type="String"></Data></Cell>').join('')}</Row>`;
 
   // Modelo 303 sheet
   const m303Headers = ['Trimestre','IVA repercutido (facturas)','IVA soportado deducible (gastos)','Resultado IVA'];

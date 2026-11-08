@@ -44,9 +44,9 @@ contextBridge.exposeInMainWorld('api', {
     getByClient: (clientId) => ipcRenderer.invoke('invoices:getByClient', clientId),
     getOverdue: (days) => ipcRenderer.invoke('invoices:getOverdue', days),
     getByRectifiedId: (id) => ipcRenderer.invoke('invoices:getByRectifiedId', id),
-    exportCSV: (year) => ipcRenderer.invoke('invoices:exportCSV', year),
-    exportExcel: (year) => ipcRenderer.invoke('invoices:exportExcel', year),
-    exportPDFSummary: (year) => ipcRenderer.invoke('invoices:exportPDFSummary', year)
+    exportCSV: (year, period) => ipcRenderer.invoke('invoices:exportCSV', year, period),
+    exportExcel: (year, period) => ipcRenderer.invoke('invoices:exportExcel', year, period),
+    exportPDFSummary: (year, period) => ipcRenderer.invoke('invoices:exportPDFSummary', year, period)
   },
 
   // ── Activity Log ──────────────────────────────────────────────────────────
@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld('api', {
     exportFiscalExcel: (year) => ipcRenderer.invoke('dashboard:exportFiscalExcel', year),
     exportFiscalPDF: (year) => ipcRenderer.invoke('dashboard:exportFiscalPDF', year),
     get347: (year) => ipcRenderer.invoke('dashboard:get347', year),
+    getModelo130: (year) => ipcRenderer.invoke('dashboard:getModelo130', year),
     exportLibros: (year) => ipcRenderer.invoke('dashboard:exportLibros', year),
     export347: (year) => ipcRenderer.invoke('dashboard:export347', year),
     exportModelos: (year) => ipcRenderer.invoke('dashboard:exportModelos', year),

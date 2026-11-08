@@ -497,6 +497,15 @@ function checkRenumber(id, newNumber) {
   return { ok: true, invoice: inv, newNumber: num, warnings };
 }
 
+// '03' → ['03'], 'T2' → ['04','05','06'], '' → null (no month filter)
+function periodMonths(period) {
+  if (!period) return null;
+  const t = /^T([1-4])$/.exec(period);
+  if (t) { const first = (Number(t[1]) - 1) * 3 + 1; return [0, 1, 2].map(k => String(first + k).padStart(2, '0')); }
+  if (/^(0[1-9]|1[0-2])$/.test(period)) return [period];
+  throw new Error(`Periodo no válido: ${period}`);
+}
+
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 const invoices = {
@@ -672,6 +681,21 @@ const invoices = {
       WHERE i.invoice_number LIKE ? OR c.name LIKE ?
       ORDER BY i.date DESC
     `).all(q, q);
+  },
+  // Invoices of a period: year (or all) and optionally a month ('01'-'12') or quarter ('T1'-'T4')
+  getByPeriod(year, period = '') {
+    const months = periodMonths(period);
+    const where = [];
+    const args = [];
+    if (year) { where.push("strftime('%Y', i.date) = ?"); args.push(String(year)); }
+    if (months) { where.push(`strftime('%m', i.date) IN (${months.map(() => '?').join(',')})`); args.push(...months); }
+    return db.prepare(`
+      SELECT i.*, c.name as client_name, c.email as client_email
+      FROM invoices i
+      LEFT JOIN clients c ON i.client_id = c.id
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY i.date DESC, i.id DESC
+    `).all(...args);
   },
   getByYear(year) {
     return db.prepare(`
@@ -1268,6 +1292,8 @@ invoices.markEmailSent = function(id) {
 
 // ─── Fiscal reports ───────────────────────────────────────────────────────────
 
+const { calcModelo130 } = require('../modelo130');
+
 const M347_THRESHOLD = 3005.06;
 // Payments that are not operations with a third party (Social Security fees, taxes)
 const M347_EXCLUDED_EXPENSE_CATEGORIES = ['SEG_SOCIAL', 'TRIBUTOS'];
@@ -1286,6 +1312,24 @@ function addToGroup(groups, key, base, amount, date) {
 const round2 = n => Math.round(n * 100) / 100;
 
 const fiscal = {
+  // Modelo 130 for a year, quarter by quarter (cumulative, see src/modelo130.js).
+  // Casilla 13 needs the previous year's net income: taken from the previous year's data in
+  // Clarifactu when there is any; otherwise unknown (no reduction applied).
+  getModelo130(year) {
+    const y = Number(year);
+    const prev = String(y - 1);
+    const hasPrev = db.prepare(`
+      SELECT (SELECT COUNT(*) FROM invoices WHERE strftime('%Y', date) = ?) +
+             (SELECT COUNT(*) FROM expenses WHERE strftime('%Y', date) = ?) AS n`).get(prev, prev).n > 0;
+    let prevYearNet = null;
+    if (hasPrev) {
+      const inc = db.prepare(`SELECT COALESCE(SUM(subtotal), 0) AS v FROM invoices WHERE strftime('%Y', date) = ?`).get(prev).v;
+      const exp = db.prepare(`SELECT COALESCE(SUM(deductible_amount), 0) AS v FROM expenses WHERE strftime('%Y', date) = ?`).get(prev).v;
+      prevYearNet = round2(inc - exp);
+    }
+    return { year: y, prevYearNet, rows: calcModelo130(dashboard.getFiscalSummary(y), { prevYearNet }) };
+  },
+
   // Libros registro de ingresos y gastos (IRPF, estimación directa) for a year
   getLibroRegistro(year) {
     const y = String(year);

@@ -67,6 +67,16 @@ async function renderInvoices(container) {
             <option value="">Todos los años</option>
             ${generateInvoiceYearOptions(year)}
           </select>
+          <select class="year-select" id="invoice-period-filter" title="Mes o trimestre">
+            <option value="">Todo el año</option>
+            <optgroup label="Trimestres">
+              <option value="T1">1.º trimestre</option><option value="T2">2.º trimestre</option>
+              <option value="T3">3.º trimestre</option><option value="T4">4.º trimestre</option>
+            </optgroup>
+            <optgroup label="Meses">
+              ${INVOICE_MONTHS.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}">${m}</option>`).join('')}
+            </optgroup>
+          </select>
           <select class="sort-select" id="invoice-payment-filter">
             <option value="">Todos los estados</option>
             <option value="pendiente">Pendiente</option>
@@ -170,6 +180,7 @@ async function renderInvoices(container) {
   // Events
   document.getElementById('invoice-search').addEventListener('input', debounce(filterAndRenderInvoices, 200));
   document.getElementById('invoice-year-filter').addEventListener('change', filterAndRenderInvoices);
+  document.getElementById('invoice-period-filter').addEventListener('change', filterAndRenderInvoices);
   document.getElementById('invoice-payment-filter').addEventListener('change', filterAndRenderInvoices);
   document.getElementById('invoice-sort').addEventListener('change', filterAndRenderInvoices);
 
@@ -183,20 +194,21 @@ async function renderInvoices(container) {
   document.addEventListener('click', () => { exportMenu.style.display = 'none'; }, { capture: true, passive: true });
 
   const getYear = () => { const el = document.getElementById('invoice-year-filter'); return el?.value ? parseInt(el.value) : null; };
+  const getPeriod = () => document.getElementById('invoice-period-filter')?.value || '';
 
   document.getElementById('export-csv-btn').addEventListener('click', async () => {
     exportMenu.style.display = 'none';
-    const result = await window.api.invoices.exportCSV(getYear());
+    const result = await window.api.invoices.exportCSV(getYear(), getPeriod());
     if (result.success) showToast('CSV exportado correctamente', 'success');
   });
   document.getElementById('export-excel-btn').addEventListener('click', async () => {
     exportMenu.style.display = 'none';
-    const result = await window.api.invoices.exportExcel(getYear());
+    const result = await window.api.invoices.exportExcel(getYear(), getPeriod());
     if (result.success) showToast('Excel exportado correctamente', 'success');
   });
   document.getElementById('export-pdf-summary-btn').addEventListener('click', async () => {
     exportMenu.style.display = 'none';
-    const result = await window.api.invoices.exportPDFSummary(getYear());
+    const result = await window.api.invoices.exportPDFSummary(getYear(), getPeriod());
     if (result && result.success) showToast('PDF exportado correctamente', 'success');
     else if (result && result.reason !== 'cancelled') showToast('Error al exportar PDF', 'error');
   });
@@ -227,6 +239,15 @@ async function renderInvoices(container) {
   document.getElementById('bulk-paid-btn').addEventListener('click', () => bulkMarkAsPaid());
 }
 
+const INVOICE_MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+// '03' → ['03'], 'T2' → ['04','05','06'], '' → null (whole year). Same rule as db periodMonths().
+function invoicePeriodMonths(period) {
+  if (!period) return null;
+  if (period[0] === 'T') { const first = (Number(period[1]) - 1) * 3 + 1; return [0, 1, 2].map(k => String(first + k).padStart(2, '0')); }
+  return [period];
+}
+
 function generateInvoiceYearOptions(currentYear) {
   const years = [];
   for (let y = currentYear; y >= currentYear - 5; y--) {
@@ -243,6 +264,7 @@ async function loadInvoices() {
 function filterAndRenderInvoices() {
   const searchEl = document.getElementById('invoice-search');
   const yearEl = document.getElementById('invoice-year-filter');
+  const periodEl = document.getElementById('invoice-period-filter');
   const paymentEl = document.getElementById('invoice-payment-filter');
   const sortEl = document.getElementById('invoice-sort');
 
@@ -250,6 +272,7 @@ function filterAndRenderInvoices() {
 
   const query = searchEl.value.toLowerCase();
   const year = yearEl ? yearEl.value : '';
+  const periodMonths = invoicePeriodMonths(periodEl ? periodEl.value : '');
   const paymentFilter = paymentEl ? paymentEl.value : '';
   const sortValue = sortEl ? sortEl.value : 'date-desc';
 
@@ -259,6 +282,7 @@ function filterAndRenderInvoices() {
       (inv.client_name || '').toLowerCase().includes(query);
 
     const matchYear = !year || (inv.date && inv.date.startsWith(year));
+    const matchPeriod = !periodMonths || (inv.date && periodMonths.includes(inv.date.slice(5, 7)));
 
     let matchPayment = true;
     if (paymentFilter === 'pagada') {
@@ -269,7 +293,7 @@ function filterAndRenderInvoices() {
       matchPayment = isOverdue(inv);
     }
 
-    return matchSearch && matchYear && matchPayment;
+    return matchSearch && matchYear && matchPeriod && matchPayment;
   });
 
   // Sort
