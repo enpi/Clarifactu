@@ -89,16 +89,44 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
 
-      # Build before tagging, so a failed build never leaves a tag without a release.
-      # Electron comes from node_modules (build.electronDist, already fetched by npm ci).
-      # Large GitHub release downloads have failed intermittently with 504: retry.
-      - name: Build installer
+      # electron-builder downloads its toolsets (7-Zip, NSIS) from GitHub releases, which
+      # returned 504 on these runners. Fetch them through the API (gh) and serve them from a
+      # localhost mirror; electron-builder still verifies their checksums.
+      - name: Fetch build tools
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          M="$RUNNER_TEMP/builder-mirror"
+          while read -r rel file; do
+            mkdir -p "$M/$rel"
+            for i in 1 2 3; do
+              gh release download "$rel" -R electron-userland/electron-builder-binaries -p "$file" -D "$M/$rel" --clobber && break
+              echo "Download of $file failed (attempt $i), retrying in 20 s"; sleep 20
+            done
+            test -s "$M/$rel/$file"
+          done <<'EOF'
+          7zip@1.0.0 7zip-win-x64.tar.gz
+          nsis-3.0.4.1 nsis-3.0.4.1.7z
+          nsis-resources-3.4.1 nsis-resources-3.4.1.7z
+          winCodeSign-2.6.0 winCodeSign-2.6.0.7z
+          EOF
+
+      # Build before tagging, so a failed build never leaves a tag without a release.
+      # Electron comes from node_modules (build.electronDist).
+      - name: Build installer
+        env:
+          ELECTRON_BUILDER_BINARIES_MIRROR: http://127.0.0.1:47123/
+          ELECTRON_BUILDER_BINARIES_ALLOW_HTTP: 'true'
+        run: |
+          node scripts/serve-dir.js "$RUNNER_TEMP/builder-mirror" 47123 > "$RUNNER_TEMP/mirror.log" 2>&1 &
+          sleep 2
+          ok=1
           for i in 1 2 3; do
-            npx electron-builder --win --x64 --publish never && exit 0
+            npx electron-builder --win --x64 --publish never && { ok=0; break; }
             echo "Build attempt $i failed, retrying in 30 s"; sleep 30
           done
-          exit 1
+          echo "--- mirror requests ---"; cat "$RUNNER_TEMP/mirror.log"
+          exit $ok
 
       - name: Commit and tag version
         run: |
