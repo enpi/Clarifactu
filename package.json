@@ -73,7 +73,8 @@
       "!node_modules/.cache/**/*",
       "!node_modules/better-sqlite3/{src,deps}/**/*",
       "!node_modules/better-sqlite3/prebuilds/{darwin-*,linux-*,linuxmusl-*,win32-arm64}.node"
-    ]
+    ],
+    "electronDist": "node_modules/electron/dist"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",

@@ -55,29 +55,55 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      # Bump the patch version, unless the current one has a tag but no release yet
+      # (a previous run failed after tagging): then release that version.
       - name: Decide version
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CURRENT="$(node -p "require('./package.json').version")"
-          if git rev-parse -q --verify "refs/tags/v$CURRENT" >/dev/null; then
+          if git rev-parse -q --verify "refs/tags/v$CURRENT" >/dev/null && gh release view "v$CURRENT" >/dev/null 2>&1; then
             npm version patch --no-git-tag-version >/dev/null
           fi
           VERSION="$(node -p "require('./package.json').version")"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
 
+      # Build before tagging, so a failed build never leaves a tag without a release.
+      # Electron comes from node_modules (build.electronDist, already fetched by npm ci).
+      # Large GitHub release downloads have failed intermittently with 504: retry.
+      - name: Build installer
+        run: |
+          for i in 1 2 3; do
+            npx electron-builder --win --x64 --publish never && exit 0
+            echo "Build attempt $i failed, retrying in 30 s"; sleep 30
+          done
+          exit 1
+
       - name: Commit and tag version
         run: |
+          V="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet -- package.json package-lock.json; then
-            git commit -m "chore: release v${{ steps.version.outputs.version }} [skip ci]" -- package.json package-lock.json
+            git commit -m "chore: release v$V [skip ci]" -- package.json package-lock.json
           fi
           git pull --rebase --autostash origin master
-          git tag "v${{ steps.version.outputs.version }}"
-          git push origin HEAD:master "v${{ steps.version.outputs.version }}"
+          git rev-parse -q --verify "refs/tags/v$V" >/dev/null || git tag "v$V"
+          git push origin HEAD:master "v$V"
 
-      - name: Build and publish release
-        run: npm run publish
+      # Upload through the GitHub API with the asset names the auto-updater expects
+      # (electron-builder used to publish them with dashes instead of spaces)
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          mkdir -p release
+          cp "dist/Clarifactu Setup $V.exe" "release/Clarifactu-Setup-$V.exe"
+          cp "dist/Clarifactu Setup $V.exe.blockmap" "release/Clarifactu-Setup-$V.exe.blockmap"
+          cp "dist/Clarifactu $V.exe" "release/Clarifactu-$V.exe"
+          cp dist/latest.yml release/latest.yml
+          grep -q "url: Clarifactu-Setup-$V.exe" release/latest.yml
+          gh release create "v$V" release/* --title "$V" --notes ""
