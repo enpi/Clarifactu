@@ -46,6 +46,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron 45 no longer downloads its binary on install. Fetch it through the GitHub API
+      # (gh), which kept working while direct release downloads returned 504, and check it
+      # against the checksums shipped inside the electron package.
+      - name: Install Electron binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="$(node -p "require('electron/package.json').version")"
+          Z="electron-v$V-win32-x64.zip"
+          for i in 1 2 3; do
+            gh release download "v$V" -R electron/electron -p "$Z" -D "$RUNNER_TEMP" --clobber && break
+            echo "Download attempt $i failed, retrying in 20 s"; sleep 20
+          done
+          echo "$(node -p "require('electron/checksums.json')['$Z']")  $RUNNER_TEMP/$Z" | sha256sum -c -
+          rm -rf node_modules/electron/dist
+          unzip -q "$RUNNER_TEMP/$Z" -d node_modules/electron/dist
+          printf 'electron.exe' > node_modules/electron/path.txt
+          cat node_modules/electron/dist/version
+
       # Never ship a release with a known high or critical vulnerability (Electron itself
       # is a devDependency but ends up inside the installer, so the whole tree is checked)
       - name: Security audit

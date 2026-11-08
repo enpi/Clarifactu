@@ -248,6 +248,9 @@ El documento generado incluye:
 # Instalar dependencias
 npm install
 
+# Descargar el binario de Electron (desde Electron 45 no se descarga solo al instalar)
+npx install-electron
+
 # Iniciar en modo desarrollo (con DevTools)
 npm run dev
 
