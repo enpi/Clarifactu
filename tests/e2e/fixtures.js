@@ -18,6 +18,8 @@ const { generateKey } = require('../../scripts/generate-key');
 // First window of a launched app, past the onboarding wizard a fresh data folder starts in
 async function openReadyWindow(app) {
   const page = await app.firstWindow();
+  // Since Electron 45 the window is handed over blank, before index.html loads
+  await page.waitForURL(/index\.html$/);
   await page.waitForLoadState('domcontentloaded');
   const onboarded = await page.evaluate(() => window.api.settings.isOnboardingDone());
   if (!onboarded) {

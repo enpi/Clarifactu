@@ -57,6 +57,16 @@ Pedido: puntos 1, 4, 5, 6, 7, 8 y 9 de la lista de ideas, y arreglar los tests e
 - Not verified for real: sending a reminder through Gmail (the modal and templates are tested, not the SMTP send); the
   libros registro follow the required content but not AEAT's official import template; 347 rules worth checking with a gestoría.
 
+## Seguridad (2026-11-08)
+- npm audit 41 -> 5 low (deepmerge: no fixed release, test tooling only). Electron 29 -> 45, better-sqlite3 9 -> 13 (Node-API,
+  prebuilt in the npm package: no rebuild, no tests/ copy), electron-builder 24 -> 26 (`win.sign` removed), nodemailer 8 -> 10,
+  adm-zip 0.5 -> 0.6, scoped overrides for glob/minimatch. CI: Node 24 + `npm audit --audit-level=high` gate.
+- Verified: unit 210/210, e2e 46/46 twice on Electron 45, packaged exe starts and its DB + backup work, NSIS + portable build.
+- Electron 45 hands the window over blank before index.html loads: e2e fixture now waits for the URL.
+- GitHub release asset downloads returned 504 for large files from this machine; `gh release download` (API route) worked.
+  Local build used a localhost mirror with checksum-verified files (ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR).
+- Installer size 76 MB -> 123 MB (Electron 45).
+
 ---
 
 # (Anterior) Fix implicit state machine gaps (2026-11-08) — hecho, commit e14b066, publicado en v1.2.4

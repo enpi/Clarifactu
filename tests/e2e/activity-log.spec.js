@@ -70,12 +70,10 @@ test.describe('Activity Log', () => {
     await window.locator('#save-invoice-btn').click();
     await window.waitForSelector('.page-title', { timeout: 8000 });
 
-    // Close modal if it opened
-    const modalOverlay = window.locator('#modal-overlay:not(.hidden)');
-    if (await modalOverlay.count() > 0) {
-      await window.locator('#modal-close-btn').click();
-      await window.waitForTimeout(300);
-    }
+    // Saving opens the invoice preview a moment later (setTimeout): wait for it and close it
+    await window.waitForSelector('#modal-overlay:not(.hidden)');
+    await window.locator('#modal-close-btn').click();
+    await window.waitForSelector('#modal-overlay.hidden', { state: 'attached' });
 
     // Navigate to Dashboard
     await window.locator('.nav-item[data-page="dashboard"]').click();
